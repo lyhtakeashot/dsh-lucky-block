@@ -33,7 +33,13 @@ const body = src.slice(start, end === -1 ? undefined : end)
    用缩进区分顶层事件和嵌套对象，避免抽到 visual: { kind: 'popups' } 里的东西。 */
 const chunks = body.split(/\n(?= {4}\{\n {6}id:)/)
 
-/** 在一条事件文本里取某个字段（字符串 / 数字）。 */
+/** 在一条事件文本里取某个字段（字符串 / 数字）。
+ *
+ * 取**第一个**匹配 —— 这依赖「事件对象的字段写在最前面，注释与后续逻辑在后」这一结构。
+ * 但有个坑：只要任何一条事件的 id 出现在 chunk 里更早的位置（例如某段 JSDoc 里
+ * 举例写了 `id: 'foo'`），就会抢到这一条。所以下面额外做一次「块首校验」：
+ * 事件块的 `id:` 必须紧跟在开头的 `    {` 之后（允许中间只有空白），
+ * 否则说明这一段不是事件定义，直接丢弃。 */
 function field(text, name, kind) {
   const re = new RegExp(`\\b${name}:\\s*(${kind === 'num' ? '[0-9_]+' : `'[^']*'`})`)
   const m = re.exec(text)
@@ -43,11 +49,16 @@ function field(text, name, kind) {
 
 const rows = []
 for (const chunk of chunks) {
+  // 事件块必须以 `{` 开头，且第一个字段就是 id —— 不是这样的 chunk 是伪命中。
+  const head = chunk.replace(/^\s+/, '')
+  if (!head.startsWith('{')) continue
+  const firstField = /^\{\s*\n\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/.exec(head)
+  if (!firstField || firstField[1] !== 'id') continue
+
   const id = field(chunk, 'id', 'str')
   const title = field(chunk, 'title', 'str')
   const weight = field(chunk, 'weight', 'num')
   if (!id || !title || weight === null) continue
-  // 事件定义在 chunk 的最前面；后面的注释/代码不算。
   rows.push({
     id,
     title,

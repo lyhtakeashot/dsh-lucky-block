@@ -1,5 +1,5 @@
 /**
- * 端到端探针：验证四季宝人格层真的生效。
+ * 端到端探针：验证人格层真的生效、且 prompt 不出现角色名。
  *
  * 检查项：
  *   1. /ping 拿到的事件清单里有 joke / news，并且带 persona 状态与 chatter 字段；
@@ -62,8 +62,8 @@ function listProjections() {
  * 读出某个会话投影里「第一轮用户消息」的实际文本。
  *
  * ⚠️ 关键陷阱：`turnOutline.turns[0].prompt` 是**预览字段，被截断到 50 字符**
- * （实测形如「［角色设定 — 你现在的身份是「四季宝」］ 你是内置 AI 的实验型号智能枪，型号 HJKE-11…」，
- * 后面带省略号）。拿它做内容断言会得到「人格在、任务全丢」的假报错。
+ * （实测形如「［角色设定］ 你的身份是…」，后面带省略号）。
+ * 拿它做内容断言会得到「人格在、任务全丢」的假报错。
  * 完整文本在 `titleInput.val.first.text`。
  */
 function firstPromptOf(file) {
@@ -96,7 +96,7 @@ check(ping.status === 200 && !!pv, 'ping 返回 200')
 const ids = (pv?.events ?? []).map((e) => e.id)
 check(ids.includes('joke'), '事件清单含 joke', JSON.stringify(ids))
 check(ids.includes('news'), '事件清单含 news')
-check(!!pv?.persona && typeof pv.persona.name === 'string', 'ping 带 persona 状态', JSON.stringify(pv?.persona))
+check(!!pv?.persona && typeof pv.persona.flipAfter === 'number', 'ping 带 persona 状态', JSON.stringify(pv?.persona))
 check('chatter' in (pv ?? {}), 'ping 带 chatter 字段', JSON.stringify(pv?.chatter))
 console.log('      persona =', JSON.stringify(pv?.persona))
 
@@ -107,7 +107,7 @@ const rv = roll.json?.value
 check(roll.status === 200 && !!rv, 'roll 返回 200', JSON.stringify(roll.json?.error ?? ''))
 console.log('      事件 =', rv?.eventId, '| 会话 =', rv?.sessionId, '| quip =', JSON.stringify(rv?.quip))
 
-check(typeof rv?.quip === 'string' && rv.quip.length > 0, 'roll 返回四季宝台词 quip')
+check(typeof rv?.quip === 'string' && rv.quip.length > 0, 'roll 返回角色台词 quip')
 
 if (rv?.sessionId) {
   // 等会话投影落盘（异步写，别用固定 sleep 赌）
@@ -126,9 +126,9 @@ if (rv?.sessionId) {
   if (promptText) {
     // 人格标记
     check(promptText.includes('［角色设定'), 'prompt 含人格段标题')
-    check(promptText.includes('四季宝'), 'prompt 含角色名「四季宝」')
+    check(!promptText.includes('四季宝'), 'prompt 不含角色名（用户要求）')
     check(promptText.includes('用户'), 'prompt 用「用户」称呼')
-    check(/冷知识|音量提高|权限/.test(promptText), 'prompt 含四季宝标志句式')
+    check(/冷知识|音量提高|权限/.test(promptText), 'prompt 含标志句式')
     check(promptText.includes('以下是本次要做的事'), 'prompt 含任务分隔标记')
     // 任务正文必须还在（人格不能把任务挤掉）。
     // 按**本次实际抽中的事件**挑对应标记，不要用一条宽松的大正则 ——
@@ -147,7 +147,7 @@ if (rv?.sessionId) {
     } else {
       check(promptText.includes(marker), `prompt 保留了 ${rv.eventId} 的任务正文`, `标记=${marker}`)
     }
-    // 收尾点评请求也必须到位，否则四季宝只在场不说话
+    // 收尾点评请求也必须到位，否则只有人格在说话、没有结尾
     check(promptText.includes('最后一步'), 'prompt 含收尾点评请求')
     // 考据禁止项
     check(!/Tsunami/.test(promptText), 'prompt 未出现未确证的制造商名')

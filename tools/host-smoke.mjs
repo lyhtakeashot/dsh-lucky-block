@@ -328,15 +328,17 @@ if (soundFail > 0) process.exit(1)
 console.log('sound route: OK')
 
 /* ------------------------------------------------------------------ *
- * 四季宝人格层
+ * 人格层
  * ------------------------------------------------------------------ */
 
 const persona = await import('../lib/persona.js')
 let personaFail = 0
 
 // 1. 默认人格必须完整可用
+// 注意：字段清单里**没有 `name`** —— 用户要求 prompt 里不出现任何角色名，
+// 所以人格层整个不带名字（`mergePersona` 仍接受 `name` 覆盖以兼容老 config，只是不透出）。
 const def = persona.mergePersona(null)
-for (const key of ['name', 'identity', 'address', 'traits', 'volumeLines', 'badUserLines', 'flippedTraits']) {
+for (const key of ['identity', 'address', 'traits', 'volumeLines', 'badUserLines', 'flippedTraits']) {
   const v = def[key]
   const ok = Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.length > 0
   if (!ok) {
@@ -344,15 +346,19 @@ for (const key of ['name', 'identity', 'address', 'traits', 'volumeLines', 'badU
     personaFail += 1
   }
 }
+if (!(def.name === undefined || typeof def.name === 'string')) {
+  console.error('FAIL  name 若存在必须是字符串')
+  personaFail += 1
+}
 if (def.address !== '用户') {
   console.error(`FAIL  默认称呼应为「用户」，实际 ${def.address}`)
   personaFail += 1
 }
 
 // 2. 用户配置覆盖：整段替换语义
-const overridden = persona.mergePersona({ name: '随身小宝', traits: ['只说一句话。'], bogus: 1, traits2: [] })
-if (overridden.name !== '随身小宝') {
-  console.error('FAIL  name 未被覆盖')
+const overridden = persona.mergePersona({ identity: '一把不说话的枪。', traits: ['只说一句话。'], bogus: 1, traits2: [] })
+if (overridden.identity !== '一把不说话的枪。') {
+  console.error('FAIL  identity 未被覆盖')
   personaFail += 1
 }
 if (overridden.traits.length !== 1) {
@@ -372,7 +378,7 @@ if (emptied.traits.length !== def.traits.length) {
 // 垃圾输入必须退化成默认值，不能抛
 for (const junk of [42, 'x', [], true]) {
   const m = persona.mergePersona(junk)
-  if (m.name !== def.name) {
+  if (m.identity !== def.identity) {
     console.error(`FAIL  mergePersona(${JSON.stringify(junk)}) 未退化成默认人格`)
     personaFail += 1
   }
@@ -455,7 +461,13 @@ try {
   listed = out
     .split('\n')
     .map((line) => line.trim().split(/\s+/))
-    .filter((cols) => cols.length >= 5 && /^[a-z0-9-]+$/.test(cols[0]))
+    /* 只认真实数据行。数据行的形状是：id / 类型 / 权重 / 概率 / 说明，
+       所以**第三列必须是数字**。这条判据能一次挡掉两种伪命中：
+       · 表头行 `id 类型 权重 概率 说明` —— `id` 是合法的 `[a-z0-9-]+`、列数也够，
+         不加数字校验会被当成一个 id 为 "id" 的事件（踩过，报的是
+         「解析到 9 个事件，运行期有 8 个」这种驴唇不对马嘴的错）。
+       · 分隔线行 `---------…` —— 单独用 `/^[a-z0-9-]+$/` 是放行连字符的。 */
+    .filter((cols) => cols.length >= 5 && /^[a-z0-9-]+$/.test(cols[0]) && /^\d+$/.test(cols[2]))
     .map((cols) => ({ id: cols[0], kind: cols[1] === '视觉' ? 'visual' : 'agent', weight: Number(cols[2]) }))
 } catch (error) {
   const raw = String(error?.message ?? error)

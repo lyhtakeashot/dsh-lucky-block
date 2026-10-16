@@ -26,10 +26,11 @@ function check(ok, label, detail) {
 }
 
 console.log('— 默认人格的基本形状 —')
-check(DEFAULT_PERSONA.name === '四季宝', '名字是「四季宝」')
+check(!('name' in DEFAULT_PERSONA), '默认人格没有 name 字段（用户要求 prompt 不出现角色名）')
 check(Array.isArray(DEFAULT_PERSONA.traits) && DEFAULT_PERSONA.traits.length > 0, '有 traits')
 check(Array.isArray(DEFAULT_PERSONA.flippedTraits) && DEFAULT_PERSONA.flippedTraits.length > 0, '有 flippedTraits')
 check(DEFAULT_PERSONA.address === '用户', '称呼固定为「用户」')
+check(typeof DEFAULT_PERSONA.identity === 'string' && DEFAULT_PERSONA.identity.length > 0, '有身份描述')
 
 console.log('\n— 考据红线：默认人格里不能出现的东西 —')
 const defaultDump = JSON.stringify(DEFAULT_PERSONA)
@@ -43,15 +44,17 @@ check(!otherSongs.test(defaultDump), '没编造别的歌')
 console.log('\n— mergePersona：坏输入一律退化到默认，不抛错 —')
 for (const bad of [null, undefined, 0, '', 'x', [], 123, true, { traits: 'not-array' }, { name: 42 }]) {
   const m = mergePersona(bad)
-  check(m.name === '四季宝' && m.traits.length > 0, `坏配置 ${JSON.stringify(bad)} → 默认人格`)
+  check(m.traits.length > 0 && m.address === '用户', `坏配置 ${JSON.stringify(bad)} → 默认人格`)
 }
 check(mergePersona({ traits: [] }).traits.length > 0, '空数组 traits 不覆盖（否则人格会变空）')
 check(mergePersona({ traits: ['  ', ''] }).traits.length > 0, '全空白 traits 不覆盖')
-check(mergePersona({ name: '   ' }).name === '四季宝', '全空白 name 不覆盖')
+
+console.log('\n— mergePersona：name 是「接受但不使用」的兼容字段 —')
+check(mergePersona({ name: '小方块' }).name === '小方块', '老配置写 name 不报错')
+check(!buildPersonaBlock(mergePersona({ name: '小方块' })).includes('小方块'), '但 name 永远不进 prompt')
 
 console.log('\n— mergePersona：正常覆盖是整段替换 —')
-const custom = mergePersona({ name: '小方块', traits: ['只说你爱听的。'] })
-check(custom.name === '小方块', 'name 可覆盖')
+const custom = mergePersona({ traits: ['只说你爱听的。'] })
 check(custom.traits.length === 1 && custom.traits[0] === '只说你爱听的。', 'traits 整段替换而非追加', `得到 ${custom.traits.length} 条`)
 check(custom.flippedTraits.length === DEFAULT_PERSONA.flippedTraits.length, '未覆盖的字段保留默认')
 
@@ -63,7 +66,8 @@ check({}.polluted === undefined, '没有原型污染')
 
 console.log('\n— buildPersonaBlock：默认态 —')
 const block = buildPersonaBlock(DEFAULT_PERSONA)
-check(block.includes('四季宝'), '含角色名')
+check(block.includes('［角色设定］'), '有角色设定标签')
+check(!block.includes('四季宝'), 'prompt 不出现角色名')
 check(block.includes('用户'), '含称呼')
 check(block.includes(DEFAULT_PERSONA.traits[0]), '第一条 traits 进了 prompt')
 check(block.includes('说话方式：'), '有说话方式小节')
@@ -75,7 +79,7 @@ console.log('\n— buildPersonaBlock：翻转态 —')
 const flipped = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true })
 check(flipped.includes('爱狗人士'), '翻转态用 flippedTraits')
 check(!flipped.includes(DEFAULT_PERSONA.traits[0]), '翻转态不再含默认狠话')
-check(flipped.includes('四季宝'), '翻转态仍自称四季宝')
+check(!flipped.includes('四季宝'), '翻转态同样不含角色名')
 
 console.log('\n— buildPersonaBlock：坏用户态 —')
 const bad = buildPersonaBlock(DEFAULT_PERSONA, { mood: 'bad' })
@@ -104,7 +108,7 @@ check(wrapped.includes(TASK), '任务正文逐字保留（含换行）')
 check(wrapped.includes('冷笑话专场'), '标题进了开场白')
 check(wrapped.includes('以下是本次要做的事'), '有任务分隔标记')
 check(wrapped.indexOf('说话方式：') < wrapped.indexOf(TASK), '人格段在任务之前')
-check(wrapped.includes('四季宝'), '开场白带角色名')
+check(!wrapped.includes('四季宝'), '开场白不含角色名')
 
 console.log('\n— wrapWithPersona：翻转态开场白换腔调 —')
 const wrappedFlipped = wrapWithPersona(DEFAULT_PERSONA, { title: '冷笑话专场', body: TASK, state: { flipped: true } })
@@ -114,7 +118,7 @@ check(!wrappedFlipped.includes('你就坐着别动'), '翻转态不用默认腔�
 
 console.log('\n— buildOutroRequest —')
 const outro = buildOutroRequest(DEFAULT_PERSONA, { title: 'x' })
-check(outro.includes('四季宝'), '点评请求带角色名')
+check(!outro.includes('四季宝'), '点评请求不含角色名')
 check(outro.includes('不要重新执行任务'), '点评请求禁止重跑任务')
 const outroBad = buildOutroRequest(DEFAULT_PERSONA, { title: 'x', state: { mood: 'bad' } })
 check(outroBad.includes('坏蛋用户'), '坏用户态只让它喊这句')
@@ -130,7 +134,8 @@ const allOutputs = [
 ].join('\n')
 check(!allOutputs.includes('斯基皮'), '所有产出都不含「斯基皮」')
 check(!/Tsunami Defense Systems/i.test(allOutputs), '所有产出都不含未确证制造商')
-check(allOutputs.includes('四季宝'), '所有产出都自称四季宝')
+check(!allOutputs.includes('四季宝'), '所有产出都不含角色名（用户要求）')
+check(allOutputs.includes('［角色设定］'), '所有产出都带角色设定标签')
 
 console.log(`\n${fail === 0 ? 'ALL GREEN' : 'FAILED'}  pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)
