@@ -149,8 +149,14 @@ if (rv?.sessionId) {
     }
     // 收尾点评请求也必须到位，否则只有人格在说话、没有结尾
     check(promptText.includes('最后一步'), 'prompt 含收尾点评请求')
-    // 考据禁止项
-    check(!/(制造商|出厂|生产商)/.test(promptText), 'prompt 未出现编造的制造商信息')
+    // 不允许**断言式**地说出制造商信息。
+    // 注意不能直接匹配「制造商」三个字：prompt 里本来就有一句指令
+    // 「不要给自己编造制造商」，那是规矩本身，不是泄漏（persona-check 里踩过同一个坑）。
+    // 判据：命中点前 14 字内出现否定词就算讲规矩。
+    const manufacturerHits = [...promptText.matchAll(/(制造商|出厂|生产商)/g)]
+      .filter((m) => !/(不要|不得|别|禁止|不许|不能|没有|未)/.test(promptText.slice(Math.max(0, m.index - 14), m.index)))
+    check(manufacturerHits.length === 0, 'prompt 未出现编造的制造商信息',
+      manufacturerHits.length ? `命中 ${manufacturerHits.length} 处` : '')
     console.log('      --- prompt 前 300 字 ---')
     console.log(promptText.slice(0, 300).split('\n').map((l) => `      | ${l}`).join('\n'))
   }
