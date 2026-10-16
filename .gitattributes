@@ -1,0 +1,11 @@
+# 统一换行与二进制判定 —— 没有这份文件，Windows 上的 git 会按 autocrlf
+# 把工作区的 LF 改成 CRLF，同一个文件在不同机器上产生假的整文件 diff。
+* text=auto eol=lf
+
+# 音效是二进制，禁止任何换行转换（否则 ogg 会被写坏）
+*.ogg binary
+*.png binary
+
+# Windows 批处理必须用 CRLF，否则部分环境下无法执行
+*.cmd text eol=crlf
+*.bat text eol=crlf

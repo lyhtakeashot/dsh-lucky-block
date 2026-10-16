@@ -1,0 +1,16 @@
+# dsh-lucky-block 的挂载声明（只管宿主侧 lib/index.js）。
+#
+# 树的组装顺序：各 bundle 的 patch → 本文件 → --patch 覆盖层。
+#
+# id 必须与 lib/index.js 里的 id 完全一致，name 必须是本包的包名。
+#
+# 客户端那半部分（lib/client.js）不在这里登记：dsh-client-modules 会读
+# package.json 的 dsh.client 声明（platform: "web"），由客户端模块表自动加载，
+# 与 dsh-notify-me 的做法一致。
+#
+# 最后一条注释后面必须留空行：否则 "- insert:" 会被并进注释，整份 patch
+# 解析成空树，宿主侧插件不会进插件树（表现为按钮能点但 /roll 返回 405）。
+
+- insert:
+    - id: dsh-lucky-block
+      name: dsh-lucky-block

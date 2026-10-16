@@ -1,0 +1,25 @@
+# 依赖与构建产物
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+npm-shrinkwrap.json
+
+# 调研资料（从 DSH 安装包里解出来的第三方源码，重新分发不合适）
+research/
+
+# 本机专用的排查笔记（含绝对路径）
+docs/PRD.md
+docs/探针流程.md
+
+# 探针运行时产物
+docs/.probe-token
+docs/*.log
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~

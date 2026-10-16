@@ -1,0 +1,40 @@
+{
+  "name": "dsh-lucky-block",
+  "version": "0.2.0",
+  "description": "幸运方块：AI 选择题随机加料 + 一键回滚 + 幸运方块随机事件按钮",
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "icon": "./icon.png",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/persona.js",
+    "lib/jokes.js",
+    "lib/jokes-data.json",
+    "lib/trivia-data.json",
+    "lib/sounds",
+    "icon.png",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  }
+}
