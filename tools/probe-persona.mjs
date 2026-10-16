@@ -126,7 +126,7 @@ if (rv?.sessionId) {
   if (promptText) {
     // 人格标记
     check(promptText.includes('［角色设定'), 'prompt 含人格段标题')
-    check(!promptText.includes('四季宝'), 'prompt 不含角色名（用户要求）')
+    check(!/《[^》]{1,20}》|\b[A-Z][a-z]{3,}\b/.test(promptText), 'prompt 不含任何专名')
     check(promptText.includes('用户'), 'prompt 用「用户」称呼')
     check(/冷知识|音量提高|权限/.test(promptText), 'prompt 含标志句式')
     check(promptText.includes('以下是本次要做的事'), 'prompt 含任务分隔标记')
@@ -150,7 +150,7 @@ if (rv?.sessionId) {
     // 收尾点评请求也必须到位，否则只有人格在说话、没有结尾
     check(promptText.includes('最后一步'), 'prompt 含收尾点评请求')
     // 考据禁止项
-    check(!/Tsunami/.test(promptText), 'prompt 未出现未确证的制造商名')
+    check(!/(制造商|出厂|生产商)/.test(promptText), 'prompt 未出现编造的制造商信息')
     console.log('      --- prompt 前 300 字 ---')
     console.log(promptText.slice(0, 300).split('\n').map((l) => `      | ${l}`).join('\n'))
   }

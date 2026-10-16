@@ -83,7 +83,7 @@ try {
     check(!!promptText, '拿到翻转态 prompt')
     if (promptText) {
       check(promptText.includes('爱狗人士'), 'prompt 用了翻转后的「爱狗人士」人格')
-      check(!promptText.includes('四季宝'), 'prompt 不含角色名')
+      check(!/《[^》]{1,20}》|\b[A-Z][a-z]{3,}\b/.test(promptText), 'prompt 不含任何专名')
       check(!promptText.includes('你对这件事毫无道德负担'), 'prompt 不含默认人格的狠话')
       check(/礼貌|敬语|道歉|抱歉|不满意|请稍候/.test(promptText), 'prompt 体现礼貌腔')
       check(promptText.includes('以下是本次要做的事'), 'prompt 仍保留任务分隔标记')

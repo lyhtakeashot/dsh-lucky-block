@@ -402,9 +402,9 @@ if (!normalBlock.includes('用户')) {
   console.error('FAIL  正常人格块应使用「用户」称呼')
   personaFail += 1
 }
-// 人格块绝不能泄漏考据里禁止的东西
-if (/Tsunami|制造商是|斯基皮/.test(normalBlock)) {
-  console.error('FAIL  人格块出现考据禁止内容（制造商 / 错误译名）')
+// 人格块绝不能泄漏编造内容或任何专名（制造商 / 作品名 / 拉丁文人名）
+if (/(制造商是|出厂|生产商|由.{0,6}公司制造)|《[^》]{1,20}》|\b[A-Z][a-z]{3,}\b/.test(normalBlock)) {
+  console.error('FAIL  人格块出现编造内容或专名')
   personaFail += 1
 }
 

@@ -58,7 +58,7 @@ for (const [form, list] of groupBy(jokes, 'form')) {
 }
 
 /* ---------- 点评 ---------- */
-const quipSection = [`### 四季宝点评（${quips.length} 条）\n`]
+const quipSection = [`### 点评（${quips.length} 条）\n`]
 quips.forEach((q, i) => quipSection.push(`${i + 1}. ${q}`))
 quipSection.push('')
 

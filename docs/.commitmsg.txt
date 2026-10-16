@@ -1,0 +1,33 @@
+Remove every proper name from the project
+
+The character name was only ever a shorthand for describing the
+personality, so the whole project should not carry it -- including in
+test assertions, where writing the name down means keeping it in the
+codebase either way.
+
+Guards now check the *shape* of a proper name instead of matching a
+specific string: the persona label must be exactly [角色设定] (a label
+like [角色设定 — 你现在的身份是「X」] means someone hung a name back on
+it), no 《...》 title references, no "叫做/名叫" naming phrases, and no
+Latin-script person or brand names.
+
+This surfaced one real leak: DEFAULT_PERSONA had a trait reading
+"occasionally hums Rihanna's Disturbia", carrying both an artist and a
+work name. It is now "hums a short wordless tune; never reports the
+song, artist or source".
+
+Two false positives are worth recording because both are the same
+mistake -- a guard wider than the requirement it enforces:
+
+- The persona-label regex crossed the newline and matched the body text
+  naming the user as a workplace ticket, flagging a perfectly good
+  prompt. The character class is now same-line only.
+- Matching on the manufacturer words hit the prompt's own instruction
+  telling the model not to invent a manufacturer. claimsManufacturer()
+  now skips hits preceded within 14 chars by a negation.
+
+Also renamed the research note so no filename carries the name.
+
+Regression: persona-check 64/64, config-check 10/10, snap-check 22/22,
+local-check 22/22, verify-sounds OK, corpus overview in sync,
+host-smoke warns 0 with persona layer OK.

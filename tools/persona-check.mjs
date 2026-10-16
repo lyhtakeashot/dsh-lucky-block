@@ -25,6 +25,44 @@ function check(ok, label, detail) {
   if (ok) { pass += 1; console.log(`  PASS  ${label}`) } else { fail += 1; console.log(`  FAIL  ${label}${detail ? `  ${detail}` : ''}`) }
 }
 
+/**
+ * 生成物里**不准出现专名**。
+ *
+ * 这条守卫不写死任何具体名字 —— 把名字写进断言等于把名字留在代码里，
+ * 而要求是「整个项目不出现它」。所以改判「有没有专名的形状」：
+ * 角色设定标签只能是 `［角色设定］`，一旦变成
+ * `［角色设定 — 你现在的身份是「X」］` 就说明有人又把名字挂回去了。
+ * 另外拦掉书名号引用、以及「叫做/名叫」这类起名句式。
+ *
+ * `[^\]]` 必须限制在**同一行**内（用 `[^\]\n]`），否则它会跨到正文里的
+ * 「你称呼对方为「用户」」上，把正常 prompt 判成有专名 —— 踩过。
+ */
+function hasProperName(text) {
+  return [
+    /角色设定[^\]\n]*[「『"]/,   // 标签里挂了引号名（限同行）
+    /《[^》]{1,20}》/,            // 作品名
+    /(叫做|名叫|名字叫|译名)/,     // 起名句式
+    /\b[A-Z][a-z]{3,}\b/,         // 拉丁文人名/品牌名（如艺人、厂商）
+  ].some((re) => re.test(text))
+}
+
+/**
+ * 有没有**断言式**地说出制造商信息。
+ *
+ * 直接匹配「制造商」会命中 prompt 里那句**指令**「不要给自己编造制造商」——
+ * 那是要求本身，不是泄漏，属于误报（踩过）。所以先看命中点前面有没有
+ * 否定词，有就算讲规矩、不算泄漏。
+ */
+function claimsManufacturer(text) {
+  const re = /(制造商|出厂|生产商|由[^。\n]{0,6}公司制造)/g
+  let m
+  while ((m = re.exec(text)) !== null) {
+    const before = text.slice(Math.max(0, m.index - 14), m.index)
+    if (!/(不要|不得|别|禁止|不许|不能|没有|未)/.test(before)) return true
+  }
+  return false
+}
+
 console.log('— 默认人格的基本形状 —')
 check(!('name' in DEFAULT_PERSONA), '默认人格没有 name 字段（用户要求 prompt 不出现角色名）')
 check(Array.isArray(DEFAULT_PERSONA.traits) && DEFAULT_PERSONA.traits.length > 0, '有 traits')
@@ -32,14 +70,14 @@ check(Array.isArray(DEFAULT_PERSONA.flippedTraits) && DEFAULT_PERSONA.flippedTra
 check(DEFAULT_PERSONA.address === '用户', '称呼固定为「用户」')
 check(typeof DEFAULT_PERSONA.identity === 'string' && DEFAULT_PERSONA.identity.length > 0, '有身份描述')
 
-console.log('\n— 考据红线：默认人格里不能出现的东西 —')
+console.log('\n— 红线：默认人格里不能出现的东西 —')
 const defaultDump = JSON.stringify(DEFAULT_PERSONA)
-check(!defaultDump.includes('斯基皮'), '不含无来源译名「斯基皮」')
-check(!/Tsunami|Defense Systems|Militech/i.test(defaultDump), '不含未确证的制造商名')
-check(!/求求|不要把我|别把我/.test(defaultDump), '不含哀求桥段（社区情感投射）')
-check(!/Disturbia/.test(defaultDump) || /bum bum be-dum/.test(defaultDump), '哼歌只允许《Disturbia》那句')
+check(!claimsManufacturer(defaultDump), '不含编造的制造商信息')
+check(!/求求|不要把我|别把我/.test(defaultDump), '不含哀求桥段（与「把人当工单」的设定矛盾）')
+check(!/《[^》]{1,20}》/.test(defaultDump) || /bum bum be-dum/.test(defaultDump), '哼歌只有那一句，且不报出处')
 const otherSongs = /Imagine|Bohemian|Yesterday|Never Gonna/
 check(!otherSongs.test(defaultDump), '没编造别的歌')
+check(!hasProperName(defaultDump), '默认人格里没有任何专名')
 
 console.log('\n— mergePersona：坏输入一律退化到默认，不抛错 —')
 for (const bad of [null, undefined, 0, '', 'x', [], 123, true, { traits: 'not-array' }, { name: 42 }]) {
@@ -67,7 +105,7 @@ check({}.polluted === undefined, '没有原型污染')
 console.log('\n— buildPersonaBlock：默认态 —')
 const block = buildPersonaBlock(DEFAULT_PERSONA)
 check(block.includes('［角色设定］'), '有角色设定标签')
-check(!block.includes('四季宝'), 'prompt 不出现角色名')
+check(!hasProperName(block), 'prompt 不出现任何专名')
 check(block.includes('用户'), '含称呼')
 check(block.includes(DEFAULT_PERSONA.traits[0]), '第一条 traits 进了 prompt')
 check(block.includes('说话方式：'), '有说话方式小节')
@@ -79,8 +117,7 @@ console.log('\n— buildPersonaBlock：翻转态 —')
 const flipped = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true })
 check(flipped.includes('爱狗人士'), '翻转态用 flippedTraits')
 check(!flipped.includes(DEFAULT_PERSONA.traits[0]), '翻转态不再含默认狠话')
-check(!flipped.includes('四季宝'), '翻转态同样不含角色名')
-
+check(!hasProperName(flipped), '翻转态同样不含专名')
 console.log('\n— buildPersonaBlock：坏用户态 —')
 const bad = buildPersonaBlock(DEFAULT_PERSONA, { mood: 'bad' })
 check(bad.includes('坏用户'), '坏用户态有标记')
@@ -108,8 +145,7 @@ check(wrapped.includes(TASK), '任务正文逐字保留（含换行）')
 check(wrapped.includes('冷笑话专场'), '标题进了开场白')
 check(wrapped.includes('以下是本次要做的事'), '有任务分隔标记')
 check(wrapped.indexOf('说话方式：') < wrapped.indexOf(TASK), '人格段在任务之前')
-check(!wrapped.includes('四季宝'), '开场白不含角色名')
-
+check(!hasProperName(wrapped), '开场白不含专名')
 console.log('\n— wrapWithPersona：翻转态开场白换腔调 —')
 const wrappedFlipped = wrapWithPersona(DEFAULT_PERSONA, { title: '冷笑话专场', body: TASK, state: { flipped: true } })
 check(wrappedFlipped.includes(TASK), '翻转态同样逐字保留任务正文')
@@ -118,13 +154,13 @@ check(!wrappedFlipped.includes('你就坐着别动'), '翻转态不用默认腔�
 
 console.log('\n— buildOutroRequest —')
 const outro = buildOutroRequest(DEFAULT_PERSONA, { title: 'x' })
-check(!outro.includes('四季宝'), '点评请求不含角色名')
+check(!hasProperName(outro), '点评请求不含专名')
 check(outro.includes('不要重新执行任务'), '点评请求禁止重跑任务')
 const outroBad = buildOutroRequest(DEFAULT_PERSONA, { title: 'x', state: { mood: 'bad' } })
 check(outroBad.includes('坏蛋用户'), '坏用户态只让它喊这句')
 check(!outroBad.includes('不要重新执行任务'), '坏用户态不再给正常点评指令')
 
-console.log('\n— 端到端：人格块里不出现未确证内容 —')
+console.log('\n— 端到端：所有产出都不含专名与编造内容 —')
 const allOutputs = [
   buildPersonaBlock(DEFAULT_PERSONA),
   buildPersonaBlock(DEFAULT_PERSONA, { flipped: true }),
@@ -132,9 +168,8 @@ const allOutputs = [
   wrapWithPersona(DEFAULT_PERSONA, { title: 't', body: 'b' }),
   buildOutroRequest(DEFAULT_PERSONA, { title: 't' }),
 ].join('\n')
-check(!allOutputs.includes('斯基皮'), '所有产出都不含「斯基皮」')
-check(!/Tsunami Defense Systems/i.test(allOutputs), '所有产出都不含未确证制造商')
-check(!allOutputs.includes('四季宝'), '所有产出都不含角色名（用户要求）')
+check(!hasProperName(allOutputs), '所有产出都不含任何专名')
+check(!claimsManufacturer(allOutputs), '所有产出都不含编造制造商信息')
 check(allOutputs.includes('［角色设定］'), '所有产出都带角色设定标签')
 
 console.log(`\n${fail === 0 ? 'ALL GREEN' : 'FAILED'}  pass=${pass} fail=${fail}`)

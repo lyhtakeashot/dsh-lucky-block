@@ -17,7 +17,7 @@
  *
  * 实测结论（2026-10-16）：连续 6 次视觉事件（popups/bluescreen）全部
  * `local=true sessionId=null 新增会话=0`；唯一一个 unclaimed 会话经查
- * cwd = D:\Desktop\ai小说、内容是赛博朋克义体考据，与本插件无关。
+ * cwd 指向用户另一个工作区、内容是无关的联网考据，与本插件无关。
  *
  * 用法：node tools/probe-visual-ids.mjs <port>
  */
