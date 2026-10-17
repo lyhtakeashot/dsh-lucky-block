@@ -15,6 +15,9 @@
  * 所以脚本只报告不武断 —— 看到 unclaimed 时要人工看一眼那个会话的 cwd 与首条消息，
  * 确认是不是本插件产生的。
  *
+ * 2026-10-17 起循环里轮转 click / hold 两个池：视觉事件全归了左键单击
+ * （用户 m09978 的分流），只打默认的 hold 池永远抽不到它们。
+ *
  * 实测结论（2026-10-16）：连续 6 次视觉事件（popups/bluescreen）全部
  * `local=true sessionId=null 新增会话=0`；唯一一个 unclaimed 会话经查
  * cwd 指向用户另一个工作区、内容是无关的联网考据，与本插件无关。
@@ -71,8 +74,20 @@ const unclaimed = new Set() // 冒出来但没有任何 roll 认领 —— 这�
 let visualChecked = 0
 let failures = 0
 
+/* 两个池都打：**视觉事件全在 click 池**（popups/bluescreen 现在归左键单点），
+   而 agent 事件全在 hold 池。只打一个池就只能验到一半，而且
+   `/roll` 不传 trigger 时默认走 hold，视觉事件会永远抽不到。
+   轮转着打还能顺带让 agent 事件继续贡献「认领新会话」这条交叉验证。 */
+const TRIGGERS = ['click', 'hold']
+
 for (let i = 0; i < 60 && visualChecked < 6; i += 1) {
-  const roll = await request('POST', '/dsh-lucky-block/roll', HEADERS, '{}')
+  const trigger = TRIGGERS[i % TRIGGERS.length]
+  const roll = await request(
+    'POST',
+    '/dsh-lucky-block/roll',
+    HEADERS,
+    JSON.stringify({ trigger }),
+  )
   if (roll.status !== 200) {
     failures += 1
     continue
@@ -104,7 +119,9 @@ for (let i = 0; i < 60 && visualChecked < 6; i += 1) {
       console.log(`  PASS  [${value.eventId}] local=true sessionId=null visual=${value.visual.kind} 新增会话=${fresh.length}`)
     }
   } else {
-    console.log(`  agent [${value.eventId}] 新增会话=${fresh.length} 认领=${fresh.includes(value.sessionId) ? 'yes' : 'no'}`)
+    console.log(
+      `  ${trigger === 'click' ? 'click' : 'hold'} [${value.eventId}] 新增会话=${fresh.length} 认领=${fresh.includes(value.sessionId) ? 'yes' : 'no'}`,
+    )
   }
 }
 

@@ -1,15 +1,17 @@
 /**
- * 设置面板端到端探针：验证 `sound` 开关真的能读能写。
+ * 设置面板端到端探针：验证 `sound` 开关真的能读能写，且面板拿得到事件清单。
  *
  * 用法：node tools/probe-settings.mjs [port]
  *
  * 为什么要单独测：
- *   - `settings()` 的返回形状改了（新增 sound），而客户端在 `openSettings` 里
- *     **立刻**用一个占位对象开面板、拿到真值再替换。如果宿主不返回 sound，
- *     客户端那行 `value.sound !== false` 会算成 `undefined !== false` = true，
- *     看起来「一直开着」，用户关不掉。
+ *   - `settings()` 的返回形状改过好几次（新增 sound、删掉 localOnly/localizable），
+ *     而客户端在 `openSettings` 里**立刻**用一个占位对象开面板、拿到真值再替换。
+ *     如果宿主不返回 sound，客户端那行 `value.sound !== false` 会算成
+ *     `undefined !== false` = true，看起来「一直开着」，用户关不掉。
  *   - `saveSettings()` 是读-改-写，新增字段最容易在这里被整份覆盖抹掉
  *     （config.json 里还有用户手写的 model/persona）。
+ *   - 面板靠 `events[].trigger` 决定显示「单击」还是「长按」。字段没了面板会
+ *     全显示成「长按」，而用户看不出这是错的。
  */
 import { readFileSync } from 'node:fs'
 import http from 'node:http'
@@ -80,9 +82,26 @@ const readSettings = async () => {
 
 const before = await readSettings()
 check(typeof before.sound === 'boolean', 'settings() 返回 sound 布尔值', `sound=${before.sound}`)
-check(Array.isArray(before.localOnly), 'settings() 仍返回 localOnly', JSON.stringify(before.localOnly))
-check(Array.isArray(before.localizable) && before.localizable.length > 0, 'settings() 仍返回 localizable')
 check(typeof before.configPath === 'string' && before.configPath.length > 0, 'settings() 仍返回 configPath')
+
+/* 「能不能调 AI」那个开关已经按用户要求删了（m09978）。这里做反向断言：
+   字段要是回来了，客户端就会渲染出一堆点了没用的勾选框。
+   真正决定调不调 AI 的现在是 trigger，所以顺带验它有没有暴露给面板。 */
+check(!('localOnly' in before), 'settings() 不再返回 localOnly（开关已删）', JSON.stringify(Object.keys(before)))
+check(!('localizable' in before), 'settings() 不再返回 localizable（开关已删）')
+check(
+  Array.isArray(before.events) && before.events.length > 0,
+  'settings() 返回只读事件清单（面板用它显示单击/长按标签）',
+  `events=${Array.isArray(before.events) ? before.events.length : typeof before.events}`,
+)
+if (Array.isArray(before.events)) {
+  const badTrigger = before.events.filter((e) => e.trigger !== 'click' && e.trigger !== 'hold')
+  check(badTrigger.length === 0, '事件清单里每条都有合法 trigger', JSON.stringify(badTrigger.map((e) => e.id)))
+  const byId = new Map(before.events.map((e) => [e.id, e]))
+  check(byId.get('paper')?.trigger === 'hold', 'paper 标为长按', `trigger=${byId.get('paper')?.trigger}`)
+  check(byId.get('trivia')?.trigger === 'click', 'trivia 标为单击', `trigger=${byId.get('trivia')?.trigger}`)
+  check(!byId.has('mc-recipe'), '事件清单里没有 mc-recipe（已按用户要求删除）')
+}
 
 // 关掉，读回必须是 false
 const off = await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({ sound: false }))
@@ -94,9 +113,13 @@ check(afterOff.sound === false, '读回 sound=false（真的落盘了）', `soun
 
 // 关键：写 sound 不能把别的字段抹掉（读-改-写）
 check(
-  Array.isArray(afterOff.localOnly) && afterOff.localOnly.length === before.localOnly.length,
-  '写 sound 没有抹掉 localOnly',
-  `写前 ${JSON.stringify(before.localOnly)} → 写后 ${JSON.stringify(afterOff.localOnly)}`,
+  Array.isArray(afterOff.events) && afterOff.events.length === before.events.length,
+  '写 sound 没有抹掉事件清单',
+  `写前 ${before.events?.length} → 写后 ${afterOff.events?.length}`,
+)
+check(
+  typeof afterOff.config === 'object' && afterOff.config !== null,
+  '写 sound 后 config 仍可读（用户手写的 model/persona 还在）',
 )
 
 // 再打开，确认能双向切

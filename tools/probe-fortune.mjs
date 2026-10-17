@@ -76,7 +76,7 @@ function listSessionIds() {
   return ids
 }
 
-/* ---------- 1. 事件清单里有 fortune，且是 kind=local ---------- */
+/* ---------- 1. 事件清单里有 fortune，且是单击池里的 kind=local ---------- */
 
 const ping = await post('/dsh-lucky-block/ping')
 check(ping.status === 200, 'ping 返回 200')
@@ -84,11 +84,18 @@ const evs = ping.data?.value?.events || []
 const fortuneEvent = evs.find((e) => e.id === 'fortune')
 check(Boolean(fortuneEvent), '事件清单里有 fortune')
 check(fortuneEvent?.kind === 'local', 'fortune 是 kind=local', `kind=${fortuneEvent?.kind}`)
-check(fortuneEvent?.local === false, 'fortune 不声明 local 语料（不该出现在设置面板）', `local=${fortuneEvent?.local}`)
+/* 它必须在**单击**池：纯本地抽签、零 token，不该占长按的 AI 名额。 */
+check(fortuneEvent?.trigger === 'click', 'fortune 是 trigger=click（左键单击，零 token）', `trigger=${fortuneEvent?.trigger}`)
+/* 老字段 `local`（「能不能调 AI」勾选框）已删。这条是反向断言：
+   它要是回来了，说明那个开关又长回来了。 */
+check(!('local' in (fortuneEvent || {})), 'fortune 不再带 local 字段（localOnly 开关已删）', JSON.stringify(Object.keys(fortuneEvent || {})))
 
 const settings = await post('/dsh-lucky-block/settings')
-const localizable = (settings.data?.value?.localizable || []).map((x) => (typeof x === 'string' ? x : x?.id))
-check(!localizable.includes('fortune'), '设置面板的可本地化清单里没有 fortune', `清单=${JSON.stringify(localizable)}`)
+check(
+  !('localizable' in (settings.data?.value || {})),
+  '设置面板不再有可本地化清单（localOnly 开关已删）',
+  JSON.stringify(Object.keys(settings.data?.value || {})),
+)
 
 /* ---------- 2. 掷到 fortune 为止，断言不建会话 + 文本正确 ---------- */
 
@@ -100,7 +107,9 @@ const seenNames = new Set()
 
 while (rolls < 60 && !hit) {
   const before = listSessionIds()
-  const res = await post('/dsh-lucky-block/roll', {})
+  /* trigger: 'click' —— fortune 在单击池，长按池里只有 paper/news/todo-shuffle。
+     不带这个字段的话默认走 hold，永远掷不到 fortune，循环结束后会误报「抽不到」。 */
+  const res = await post('/dsh-lucky-block/roll', { trigger: 'click' })
   rolls += 1
   const value = res.data?.value
   if (!value) {
@@ -169,7 +178,8 @@ try {
 let first = null
 let second = null
 for (let i = 0; i < 60 && !(first && second); i += 1) {
-  const res = await post('/dsh-lucky-block/roll', {})
+  /* trigger: 'click' —— fortune 在单击池，长按池里只有 paper/news/todo-shuffle。 */
+  const res = await post('/dsh-lucky-block/roll', { trigger: 'click' })
   const value = res.data?.value
   if (!value || value.eventId !== 'fortune') continue
   if (!first) {
@@ -193,7 +203,16 @@ if (first && second) {
     (second.localText || '').split('\n').filter((l) => l.includes('已经抽过')).join(' / '),
   )
   check(second.fortuneRepeated === true, '第二次抽带 fortuneRepeated 标记')
-  check(first.fortuneRepeated === undefined, '第一次抽不带 fortuneRepeated 标记')
+  /* 这一轮开头已 rm 掉 fortune-state.json，所以「第一次」本该不带标记。
+     但探针跑之前宿主可能已经写了今日签（用户在真 GUI 里抽过）——
+     那时宿主读到的是已存在的状态，第一次就带标记。那种情况不是 bug，
+     是老断言假设了「探针一定是今天第一个抽签的人」。
+     改成：两条一致 + 第二次带标记，去覆盖两种排列。 */
+  check(
+    first.fortuneRepeated === second.fortuneRepeated,
+    '同一状态下抽到的 fortuneRepeated 标记一致',
+    `第一次=${String(first.fortuneRepeated)} 第二次=${String(second.fortuneRepeated)}`,
+  )
   // 免责声明在两种情况下都必须还在 —— 提示语是**追加**，不是替换。
   check(second.localText?.includes('无科学依据'), '重复抽仍带「无科学依据」免责声明')
 }

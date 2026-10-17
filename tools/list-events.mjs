@@ -8,6 +8,9 @@
  * 视觉事件全部解析不到 —— 而输出看起来完全正常，只是少了两行。
  * 那种错误比抛异常危险得多，所以改成逐条切分再逐字段取值。
  *
+ * 输出按 **trigger 分池** 分组打印：权重只在同一个池子里比较，
+ * 拿全局总权重算出来的概率会误导（单击池 14、长按池 8，两者互不稀释）。
+ *
  * 用法：node tools/list-events.mjs
  */
 
@@ -18,7 +21,34 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(path.resolve(here, '..', 'lib', 'index.js'), 'utf8')
 
+/* 曲库为空时运行期会把 audio 事件整条摘掉（见 buildEvents 末尾的 dropped 集合）。
+   工具必须跟着摘，否则 host-smoke 的「工具 vs 运行期」一致性检查会报
+   「解析到 9 个，运行期有 8 个」—— 而这不是 bug，是真实状态。
+   判据抄的是 localAudioTracks()：文件名白名单 + 必须是数组。 */
+function audioTrackCount() {
+  let raw = null
+  try {
+    raw = readFileSync(path.resolve(here, '..', 'lib', 'audio-tracks.json'), 'utf8')
+  } catch {
+    return 0
+  }
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
+  let parsed = null
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return 0
+  }
+  if (!Array.isArray(parsed)) return 0
+  return parsed.filter(
+    (item) => item && typeof item.file === 'string' && /^[A-Za-z0-9_-]+\.(ogg|mp3)$/.test(item.file),
+  ).length
+}
+const hasAudio = audioTrackCount() > 0
+
 // 只扫 buildEvents() 的函数体，避免误抓别处的 id/weight/title 组合。
+// 注意它现在是 `async function buildEvents()`，用 indexOf 找 `function buildEvents()`
+// 仍然能命中（子串匹配），但别改成带 `^` 锚点的正则。
 const start = src.indexOf('function buildEvents()')
 if (start === -1) {
   console.error('找不到 buildEvents()，检查函数是否被改名')
@@ -59,11 +89,17 @@ for (const chunk of chunks) {
   const title = field(chunk, 'title', 'str')
   const weight = field(chunk, 'weight', 'num')
   if (!id || !title || weight === null) continue
+  /* 空曲库 = 运行期没有这条事件，这里也不列。 */
+  if (id === 'audio' && !hasAudio) continue
   rows.push({
     id,
     title,
     weight,
     kind: field(chunk, 'kind', 'str') ?? 'agent',
+    /* trigger 缺失时**不要**给默认值：那会让「漏写 trigger」这种真 bug
+       在工具里被静默补成 hold，而运行期 drawEvent 直接跳过它、
+       该事件永远抽不到。宁可打印成 '?' 让漂移一眼可见。 */
+    trigger: field(chunk, 'trigger', 'str'),
   })
 }
 
@@ -72,23 +108,44 @@ if (rows.length === 0) {
   process.exit(1)
 }
 
-const total = rows.reduce((sum, r) => sum + r.weight, 0)
+const missingTrigger = rows.filter((r) => !r.trigger)
+if (missingTrigger.length > 0) {
+  console.error(`有事件没解析到 trigger：${missingTrigger.map((r) => r.id).join('、')}`)
+  process.exit(1)
+}
 
 /* 三种 kind 的中文标签。
-   注意别退化成「不是 visual 就是 AI」——本地文本事件（今日运气）
+   注意别退化成「不是 visual 就是 AI」——本地文本事件（今日运气 / 冷知识 / 冷笑话）
    同样不调模型，标成 AI 会让文档凭空多出一个不存在的调用。 */
 const KIND_LABEL = { agent: 'AI', visual: '视觉', local: '本地' }
 
-console.log(`${'id'.padEnd(14)} ${'类型'.padEnd(8)} ${'权重'.padEnd(4)} ${'概率'.padEnd(7)} 说明`)
-console.log('-'.repeat(72))
-for (const r of rows) {
-  const pct = ((r.weight / total) * 100).toFixed(1) + '%'
-  const kindLabel = KIND_LABEL[r.kind] ?? r.kind
-  console.log(`${r.id.padEnd(14)} ${kindLabel.padEnd(6)} ${String(r.weight).padEnd(4)} ${pct.padEnd(7)} ${r.title}`)
+/* 按 trigger 分池打印。概率的分母是**本池**权重，不是全局 ——
+   否则往单击池加十条音频会显得长按事件「概率变低了」，其实它一点没变。 */
+const POOL_LABEL = {
+  click: '左键单击（零 token，全部本地）',
+  hold: '长按挖满（调用 AI）',
 }
-console.log('-'.repeat(72))
-console.log(`共 ${rows.length} 个事件，权重合计 ${total}`)
 
-// 不建会话、不调模型的事件（视觉表演 + 本地文本）：从 kind 字段读，不靠 id 猜。
-const localOnly = rows.filter((r) => r.kind === 'visual' || r.kind === 'local')
-console.log(`其中零 token 的（不建会话、不调模型）：${localOnly.map((r) => r.title).join('、') || '（无）'}`)
+for (const pool of ['click', 'hold']) {
+  const items = rows.filter((r) => r.trigger === pool)
+  if (items.length === 0) {
+    console.log(`\n【${POOL_LABEL[pool]}】没有事件 —— drawEvent 抽到这一池会直接报错`)
+    continue
+  }
+  const poolTotal = items.reduce((sum, r) => sum + r.weight, 0)
+  console.log(`\n【${POOL_LABEL[pool]}】${items.length} 个事件，权重合计 ${poolTotal}`)
+  console.log(`  ${'id'.padEnd(14)} ${'类型'.padEnd(6)} ${'权重'.padEnd(4)} ${'概率'.padEnd(7)} 说明`)
+  console.log('  ' + '-'.repeat(70))
+  for (const r of items) {
+    const pct = ((r.weight / poolTotal) * 100).toFixed(1) + '%'
+    console.log(
+      `  ${r.id.padEnd(14)} ${(KIND_LABEL[r.kind] ?? r.kind).padEnd(4)} ${String(r.weight).padEnd(4)} ${pct.padEnd(7)} ${r.title}`,
+    )
+  }
+}
+
+console.log(`\n共 ${rows.length} 个事件`)
+
+/* 不建会话、不调模型的事件：从 kind 字段读，不靠 id 猜。 */
+const zeroToken = rows.filter((r) => r.kind === 'visual' || r.kind === 'local')
+console.log(`其中零 token 的 ${zeroToken.length} 个（不建会话、不调模型）：${zeroToken.map((r) => r.title).join('、') || '（无）'}`)

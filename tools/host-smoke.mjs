@@ -1,5 +1,5 @@
 // 用最小假 ctx 跑一遍 apply，尽早暴露宿主侧运行期错误（不依赖真实 DSH）。
-import { readdir } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const mod = await import('../lib/index.js')
@@ -54,8 +54,10 @@ console.log('warns:', warns.length, JSON.stringify(warns.slice(0, 5)))
 console.log('events hooked:', Object.keys(ev.handlers))
 
 const routeCount = calls.filter((c) => c[0] === 'route').length
-if (routeCount !== 6) {
-  console.error(`FAIL  期望注册 6 条路由（ping/roll/settings/save-settings/dice-prompt/sound），实际 ${routeCount}`)
+if (routeCount !== 7) {
+  console.error(
+    `FAIL  期望注册 7 条路由（ping/roll/settings/save-settings/dice-prompt/sound/audio），实际 ${routeCount}`,
+  )
   process.exit(1)
 }
 
@@ -148,23 +150,91 @@ if (agentIds.length === 0) {
   console.error('FAIL  没有任何 agent 事件')
   visualFail += 1
 }
-/* 今日运气必须是 kind='local'：它没有 AI 版本，不该出现在设置面板的
-   「是否调用 AI」清单里，也不该在投中时建会话。 */
+/* 今日运气必须是 kind='local'：它没有 AI 版本，不该在投中时建会话。 */
 if (!localIds.includes('fortune')) {
   console.error('FAIL  fortune 应为 kind=local（纯本地抽签，不调 AI）')
   visualFail += 1
 }
-/* local 事件不能同时声明 local 语料：那会让它出现在 settings 的可本地化清单里，
-   给用户一个「关掉 AI」的开关，而它本来就不调 AI —— 点了没有任何变化。 */
+
+/* ------------------------------------------------------------------ *
+ * 单击 / 长按两条池子（用户 m09978）
+ *
+ * 这是本轮改动的核心不变量：**单击不花 token、长按才调 AI**。
+ * 它有三条容易破的口子，全部在这里守住：
+ *   1. 有事件漏写 trigger（→ drawEvent 里永远匹配不上，事件变成抽不到的死条目）
+ *   2. 单击池里混进 kind='agent'（→ 手滑点一下就开新会话、烧 token）
+ *   3. 长按池里混进本地事件（→ 用户按住等 AI，结果只弹个窗）
+ * ------------------------------------------------------------------ */
+const TRIGGERS = new Set(['click', 'hold'])
 for (const e of evs) {
-  if (e.kind === 'local' && e.local === true) {
-    console.error(`FAIL  事件 ${e.id} 既是 kind=local 又声明了 local 语料，设置面板会出现无效开关`)
+  if (!TRIGGERS.has(e.trigger)) {
+    console.error(`FAIL  事件 ${e.id} 的 trigger 非法: ${JSON.stringify(e.trigger)}（只能是 click / hold）`)
     visualFail += 1
   }
 }
+const clickIds = evs.filter((e) => e.trigger === 'click').map((e) => e.id)
+const holdIds = evs.filter((e) => e.trigger === 'hold').map((e) => e.id)
+console.log('click pool:', JSON.stringify(clickIds))
+console.log('hold pool:', JSON.stringify(holdIds))
+
+if (clickIds.length === 0 || holdIds.length === 0) {
+  console.error('FAIL  单击池或长按池是空的（drawEvent 会抽不到事件）')
+  visualFail += 1
+}
+/* 单击 = 零 token。任何 kind='agent' 的事件出现在单击池里都是成本泄漏。 */
+for (const e of evs) {
+  if (e.trigger === 'click' && e.kind === 'agent') {
+    console.error(`FAIL  ${e.id} 在单击池里却是 kind=agent —— 手滑点一下就会开新会话烧 token`)
+    visualFail += 1
+  }
+}
+/* 长按 = 明确意图要等生成。本地事件放进来会让「按住 1.4 秒」白等。 */
+for (const e of evs) {
+  if (e.trigger === 'hold' && e.kind !== 'agent') {
+    console.error(`FAIL  ${e.id} 在长按池里却不是 kind=agent（长按应该调 AI）`)
+    visualFail += 1
+  }
+}
+/* 具体归属：这些事件必须各自在对的池子里，否则用户的手感就变了。 */
+for (const id of ['paper', 'news', 'todo-shuffle']) {
+  if (!holdIds.includes(id)) {
+    console.error(`FAIL  ${id} 应在长按池（它要调 AI）`)
+    visualFail += 1
+  }
+}
+for (const id of ['popups', 'bluescreen', 'fortune']) {
+  if (!clickIds.includes(id)) {
+    console.error(`FAIL  ${id} 应在单击池（零 token 本地事件）`)
+    visualFail += 1
+  }
+}
+/* 冷知识 / 冷笑话必须走本地库、待在单击池。它们曾经有 AI 版本，
+   现在删了 —— 这条断言防止有人把 prepare 里的 prompt 加回来。 */
+for (const id of ['trivia', 'joke']) {
+  const ev = evs.find((e) => e.id === id)
+  if (!ev) {
+    console.error(`FAIL  事件清单里没有 ${id}`)
+    visualFail += 1
+  } else {
+    if (ev.trigger !== 'click') {
+      console.error(`FAIL  ${id} 应走单击（本地库，不调 AI），实际 trigger=${ev.trigger}`)
+      visualFail += 1
+    }
+    if (ev.kind !== 'local') {
+      console.error(`FAIL  ${id} 应为 kind=local，实际 ${ev.kind}`)
+      visualFail += 1
+    }
+  }
+}
+/* Minecraft 合成表事件已按用户要求删除（m09978）。这条是反向断言：
+   它会失败的唯一原因是有人把它加回来了。 */
+if (evs.some((e) => e.id === 'mc-recipe')) {
+  console.error('FAIL  mc-recipe 事件已按用户要求删除，不该再出现在清单里')
+  visualFail += 1
+}
 
 if (visualFail > 0) process.exit(1)
-console.log('visual/local split: OK')
+console.log('visual/local split + trigger pools: OK')
 
 /* ------------------------------------------------------------------ *
  * 本地内容库（零 token 路径）
@@ -195,22 +265,13 @@ if (badPunct.length > 0) {
   localFail += 1
 }
 
-// 事件清单必须暴露 local 能力标记
-const localCapable = evs.filter((e) => e.local === true).map((e) => e.id)
-console.log('localizable events:', JSON.stringify(localCapable))
-if (!localCapable.includes('trivia') || !localCapable.includes('joke')) {
-  console.error('FAIL  trivia / joke 应被标记为可本地化')
+// 事件清单里不该再有「能不能调 AI」这类标记（那个开关已按用户要求删掉）
+if (evs.some((e) => 'local' in e)) {
+  console.error('FAIL  ping 的事件清单仍在暴露 local 标记（localOnly 开关已删，这个字段没有意义了）')
   localFail += 1
 }
-// news 必须联网，绝不能被标成本地化（否则用户勾了会得到一个什么都没干的骰子）
-for (const e of evs) {
-  if ((e.id === 'news' || e.id === 'paper') && e.local === true) {
-    console.error(`FAIL  ${e.id} 不该被标记为可本地化`)
-    localFail += 1
-  }
-}
 
-// settings 路由必须能读出 localizable 清单
+// settings 路由必须能读出只读事件清单（面板用它显示「单击 / 长按」标签）
 const settingsRoute = routes.get('/dsh-lucky-block/settings')
 if (!settingsRoute) {
   console.error('FAIL  没有注册 /dsh-lucky-block/settings 路由')
@@ -234,14 +295,26 @@ if (!settingsRoute) {
     console.error('FAIL  settings 路由没返回可解析的 value')
     localFail += 1
   } else {
-    const ids = (settings.localizable || []).map((x) => x.id)
-    console.log('settings.localizable:', JSON.stringify(ids))
-    if (!ids.includes('trivia') || !ids.includes('joke')) {
-      console.error('FAIL  settings.localizable 缺 trivia / joke')
+    /* 反向断言：localizable / localOnly 已被删除。留着它们的话客户端会以为
+       还有东西可勾，而宿主根本不认这个字段。 */
+    if ('localizable' in settings || 'localOnly' in settings) {
+      console.error('FAIL  settings 仍在返回 localizable/localOnly（这两个字段已删）')
       localFail += 1
     }
-    if (ids.includes('news')) {
-      console.error('FAIL  settings.localizable 不该含 news')
+    const items = settings.events || []
+    const ids = items.map((x) => x.id)
+    console.log('settings.events:', JSON.stringify(items))
+    if (!ids.includes('trivia') || !ids.includes('joke')) {
+      console.error('FAIL  settings.events 缺 trivia / joke')
+      localFail += 1
+    }
+    /* 面板靠 trigger 决定显示「单击」还是「长按」。缺了它面板会全显示成「长按」。 */
+    if (items.some((x) => !TRIGGERS.has(x.trigger))) {
+      console.error('FAIL  settings.events 里有条目缺 trigger')
+      localFail += 1
+    }
+    if (items.length !== evs.length) {
+      console.error(`FAIL  settings.events(${items.length}) 与 ping.events(${evs.length}) 不一致`)
       localFail += 1
     }
   }
@@ -343,6 +416,94 @@ if (!soundRoute) {
 
 if (soundFail > 0) process.exit(1)
 console.log('sound route: OK')
+
+/* ------------------------------------------------------------------ *
+ * 音频事件路由（用户 m09978：随机播放一段音频）
+ *
+ * 与 /sound 分开测，因为它是**用户自己往里放文件**的那条链路：
+ * 清单在 lib/audio-tracks.json、文件在 lib/audio/、路由在 /audio。
+ * 三处任何一处对不上，症状都只是「抽到了但没声音」—— 静默失败。
+ * 现在曲库还是空的（用户过段时间给清单），所以这里**允许为空**，
+ * 但格式与安全边界必须现在就立住。
+ * ------------------------------------------------------------------ */
+
+const audioRoute = routes.get('/dsh-lucky-block/audio')
+let audioFail = 0
+const audioCheck = (ok, label, detail = '') => {
+  if (!ok) audioFail += 1
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail && !ok ? ` —— ${detail}` : ''}`)
+}
+
+console.log('\n-- 音频事件路由 --')
+if (!audioRoute) {
+  audioCheck(false, '注册了 /dsh-lucky-block/audio 前缀路由')
+} else {
+  audioCheck(true, '注册了 /dsh-lucky-block/audio 前缀路由')
+  audioCheck(audioRoute.kind === 'prefix', '路由 kind 是 prefix', `实际 ${audioRoute.kind}`)
+  audioCheck(
+    typeof audioRoute.path === 'string' && !audioRoute.path.endsWith('/'),
+    '路由前缀不带尾斜杠（带尾斜杠永远匹配不上）',
+  )
+
+  /* 与 /sound 同一套穿越用例，外加 .mp3 —— 这条路由**允许** mp3，
+     所以 `dig1.mp3` 在这里应该是「文件不存在」而不是「文件名非法」，
+     但两者都是 404，判据仍然是「没有把内容吐出来」。 */
+  const evilAudio = [
+    '../config.json',
+    '..%2fconfig.json',
+    'song.mp3%2f..%2f..%2fconfig.json',
+    'nope.ogg',
+    'nope.mp3',
+    'song.exe',
+  ]
+  for (const name of evilAudio) {
+    const res = makeBinaryRes()
+    await audioRoute.handler(
+      { method: 'GET', url: `/dsh-lucky-block/audio/${name}`, headers: { host: '127.0.0.1:19399' } },
+      res,
+    )
+    const leaked =
+      Buffer.isBuffer(res.body) &&
+      (res.body.slice(0, 4).toString('latin1') === 'OggS' || res.body.slice(0, 3).toString('latin1') === 'ID3')
+    audioCheck(!leaked, `拒绝非法/不存在的音频 ${JSON.stringify(name)}`, `status=${res.status}`)
+  }
+
+  const bareAudio = makeBinaryRes()
+  await audioRoute.handler(
+    { method: 'GET', url: '/dsh-lucky-block/audio', headers: { host: '127.0.0.1:19399' } },
+    bareAudio,
+  )
+  audioCheck(bareAudio.status !== 200 || !Buffer.isBuffer(bareAudio.body), '裸前缀访问不返回音频')
+
+  /* 清单与文件的一致性：曲库为空是正常状态，非空则每个文件都得真在。
+     这条不能省 —— 用户填了清单却没放文件时，症状就是「点了没声音」。 */
+  const tracksRaw = await readFile(new URL('../lib/audio-tracks.json', import.meta.url), 'utf8').catch(() => null)
+  audioCheck(tracksRaw !== null, 'lib/audio-tracks.json 存在')
+  if (tracksRaw !== null) {
+    let tracks = null
+    try {
+      tracks = JSON.parse(tracksRaw.charCodeAt(0) === 0xfeff ? tracksRaw.slice(1) : tracksRaw)
+    } catch (error) {
+      audioCheck(false, 'lib/audio-tracks.json 可解析', error.message)
+    }
+    if (Array.isArray(tracks)) {
+      if (tracks.length === 0) {
+        console.log('  曲库为空（清单还没给）→ audio 事件会被整条摘掉，这是正常状态')
+        audioCheck(!evs.some((e) => e.id === 'audio'), '空曲库时 audio 事件不在清单里')
+      } else {
+        audioCheck(evs.some((e) => e.id === 'audio'), `曲库非空（${tracks.length} 条）时 audio 事件在清单里`)
+        const present = new Set(await readdir(fileURLToPath(new URL('../lib/audio/', import.meta.url))).catch(() => []))
+        const missing = tracks.map((t) => t && t.file).filter((f) => typeof f === 'string' && !present.has(f))
+        audioCheck(missing.length === 0, '曲库引用的文件都在 lib/audio/', `缺 ${JSON.stringify(missing)}`)
+      }
+    } else if (tracks !== null) {
+      audioCheck(false, 'lib/audio-tracks.json 是数组', typeof tracks)
+    }
+  }
+}
+
+if (audioFail > 0) process.exit(1)
+console.log('audio route: OK')
 
 /* ------------------------------------------------------------------ *
  * 人格层
@@ -494,7 +655,14 @@ try {
          「解析到 9 个事件，运行期有 8 个」这种驴唇不对马嘴的错）。
        · 分隔线行 `---------…` —— 单独用 `/^[a-z0-9-]+$/` 是放行连字符的。 */
     .filter((cols) => cols.length >= 5 && /^[a-z0-9-]+$/.test(cols[0]) && /^\d+$/.test(cols[2]))
-    .map((cols) => ({ id: cols[0], kind: cols[1] === '视觉' ? 'visual' : 'agent', weight: Number(cols[2]) }))
+    /* 三种类型都要认：曾经写成 `cols[1] === '视觉' ? 'visual' : 'agent'`，
+       把 kind=local 的事件（今日运气 / 冷知识 / 冷笑话）全当成 agent，
+       于是「本地事件必须零 token」这条不变量对它们静默失效。 */
+    .map((cols) => ({
+      id: cols[0],
+      kind: cols[1] === '视觉' ? 'visual' : cols[1] === '本地' ? 'local' : 'agent',
+      weight: Number(cols[2]),
+    }))
 } catch (error) {
   const raw = String(error?.message ?? error)
   if (raw.includes('EPERM')) {

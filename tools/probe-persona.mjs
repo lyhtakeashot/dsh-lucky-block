@@ -114,14 +114,15 @@ console.log('      persona =', JSON.stringify(pv?.persona))
 const before = listProjections()
 /*
  * 必须循环，不能指望第一次就抽到 agent 事件。
- * 9 个事件里有 3 个不建会话（popups 8% / bluescreen 8% / fortune 12%），
- * 合计 28% —— 首跑就撞上本地事件的概率接近三成。曾经因此报过一条
- * 「roll 返回角色台词 quip」的 FAIL，其实插件完全正常，是探针假设错了。
+ * 单击池 5 条里有 3 条不建会话（popups 14% / bluescreen 14% / fortune 21%，
+ * 合计 49%）—— 但这个探针要的是**会建会话**的，所以用 trigger:'hold'：
+ * 长按池 3 条全是 agent，一掷一个准。
+ * 以前这里不带 trigger，于是近一半的尝试落在单击池上白跑一圈。
  */
 let rv = null
 let attempts = 0
 for (; attempts < 12 && !rv; attempts += 1) {
-  const roll = await api('/dsh-lucky-block/roll', { method: 'POST', body: '{}' })
+  const roll = await api('/dsh-lucky-block/roll', { method: 'POST', body: JSON.stringify({ trigger: 'hold' }) })
   const v = roll.json?.value
   if (roll.status !== 200 || !v) {
     check(false, 'roll 返回 200', JSON.stringify(roll.json?.error ?? ''))
@@ -173,9 +174,9 @@ if (rv) {
     // 任务正文必须还在（人格不能把任务挤掉）。
     // 按**本次实际抽中的事件**挑对应标记，不要用一条宽松的大正则 ——
     // 那种写法会让「任务正文丢了但恰好匹配上别处的词」也判通过。
+    // mc-recipe 事件已按用户要求删除（m09978），它的标记一起删。
     const TASK_MARKERS = {
       paper: '随机题目',
-      'mc-recipe': '随机抽到的两个 Minecraft 概念',
       trivia: '本轮题目',
       joke: '随机冷笑话任务',
       news: '做一期「时事新闻速览」',

@@ -1,17 +1,21 @@
 /**
  * 本地内容路径的行为测试。
  *
- * 为什么不能只靠 host-smoke：smoke 只验证「注册了路由 / 清单里有 local 标记」，
+ * 为什么不能只靠 host-smoke：smoke 只验证「注册了路由 / 清单里有标记」，
  * 而这里要验证**真的能取出内容**，且内容符合契约。
  *
- * 做法：从 lib/index.js 抽真源码里的 localPayload / localOnlyConfig 逻辑太脆弱，
- * 改为直接测它们依赖的两个数据源 + 语义不变量：
- *   1. 两个语料库都读得到、条数够、无脏数据
- *   2. localOnlyConfig 的白名单语义（这是最容易写错的地方）
+ * 做法：不去复现 lib/index.js 里的抽取逻辑（那样测的是我的理解，不是代码），
+ * 改为直接测它依赖的三个数据源 + 不变量：
+ *   1. 冷笑话库读得到、条数够、无脏数据
+ *   2. 冷知识库同上
+ *   3. 音频曲库的清单格式，且引用的文件真的在 lib/audio/ 里
+ *
+ * 「单击/长按各抽哪个池」的语义由 tools/host-smoke.mjs 对着真实事件表验证，
+ * 不在这里复现 —— 那是最容易和实现分叉的地方。
  *
  * 用法：node tools/local-check.mjs
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -70,34 +74,49 @@ if (triviaRaw) {
   }
 }
 
-/* --- 3. localOnlyConfig 的白名单语义 ---
-   这段逻辑在 lib/index.js 的 apply 作用域里，拿不到。所以这里用**行为等价**的
-   复现来锁定语义 —— 它测的是我理解的规则，若实现改了这里也要跟着改。
-   真正的端到端由 tools/probe-local.mjs（连真宿主）负责。 */
-function localOnlySemantics(declared, capable) {
-  const set = new Set()
-  if (declared === true) return new Set(capable)
-  const listed = Array.isArray(declared)
-    ? declared
-    : declared && typeof declared === 'object'
-      ? Object.entries(declared).filter(([, v]) => v === true).map(([k]) => k)
-      : []
-  for (const item of listed) {
-    const id = String(item ?? '').trim()
-    if (id === '*') for (const c of capable) set.add(c)
-    else if (capable.includes(id)) set.add(id)
+/* --- 3. 音频曲库 ---
+   曲库清单是 `lib/audio-tracks.json`，音频文件放 `lib/audio/`。
+   这里只查「清单格式对、引用的文件在」—— 清单**允许为空**（用户还没给清单），
+   为空时事件会被 buildEvents 整个摘掉，那是正常状态，不是失败。
+   所以下面用「清单为空就只打印一句」而不是断言条数下限。 */
+const tracksRaw = await readFile(path.join(root, 'lib', 'audio-tracks.json'), 'utf8').catch(() => null)
+check('audio-tracks.json 存在', tracksRaw !== null)
+if (tracksRaw !== null) {
+  const clean = tracksRaw.charCodeAt(0) === 0xfeff ? tracksRaw.slice(1) : tracksRaw
+  let tracks = null
+  try {
+    tracks = JSON.parse(clean)
+  } catch (error) {
+    check('audio-tracks.json 可解析', false, error.message)
   }
-  return set
+  if (tracks !== null) {
+    check('audio-tracks.json 是数组', Array.isArray(tracks), typeof tracks)
+    if (Array.isArray(tracks)) {
+      /* 文件名白名单必须与宿主 localAudioTracks() 和 /audio 路由**逐字一致**。
+         三处任何一处放宽，都会让一个能被清单引用、却取不到（或取到了不该给的）
+         文件溜进来。这里把规则抄一遍是有意的冗余：改规则时这里会红。 */
+      const NAME_RE = /^[A-Za-z0-9_-]+\.(ogg|mp3)$/
+      check(
+        '曲库条目都有合法 file',
+        tracks.every((t) => t && typeof t.file === 'string' && NAME_RE.test(t.file)),
+        tracks.find((t) => !(t && typeof t.file === 'string' && NAME_RE.test(t.file)))?.file,
+      )
+      check('曲库文件名无重复', new Set(tracks.map((t) => t.file)).size === tracks.length)
+      check(
+        '曲库 title 若存在必须非空',
+        tracks.every((t) => t.title === undefined || (typeof t.title === 'string' && t.title.trim().length > 0)),
+      )
+      if (tracks.length === 0) {
+        console.log('曲库为空（清单还没给），音频事件会被整条摘掉 —— 这是正常状态')
+      } else {
+        const present = new Set(await readdir(path.join(root, 'lib', 'audio')).catch(() => []))
+        const missing = tracks.map((t) => t.file).filter((f) => !present.has(f))
+        check('曲库引用的文件都在 lib/audio/', missing.length === 0, `缺 ${JSON.stringify(missing)}`)
+        console.log(`曲库 ${tracks.length} 条：${tracks.map((t) => t.title || t.file).join('、')}`)
+      }
+    }
+  }
 }
-const capable = ['trivia', 'joke']
-check('未配置 → 全关', localOnlySemantics(undefined, capable).size === 0)
-check('数组白名单 → 只开列出的', [...localOnlySemantics(['trivia'], capable)].join() === 'trivia')
-check('* → 全开', localOnlySemantics(['*'], capable).size === 2)
-check('对象写法 → 只取 true', [...localOnlySemantics({ trivia: true, joke: false }, capable)].join() === 'trivia')
-check('true → 全开', localOnlySemantics(true, capable).size === 2)
-check('不支持的 id 被忽略', localOnlySemantics(['news', 'trivia'], capable).size === 1)
-check('拼错/空串被忽略', localOnlySemantics(['', '  ', 'jokee'], capable).size === 0)
-check('垃圾类型 → 全关', localOnlySemantics(42, capable).size === 0)
 
 console.log(`\n${fail === 0 ? 'ALL GREEN' : 'FAILED'} pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)

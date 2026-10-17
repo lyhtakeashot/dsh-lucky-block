@@ -106,11 +106,12 @@ function readProjection(sessionId) {
  */
 const DONE_MARKERS = {
   paper: /大纲|参考文献|背景|结论|摘要|章节|题目/,
-  'mc-recipe': /耐久|合成|修复|机制|概念|材料|漏斗|矿车|活塞|红石/,
-  /* trivia 有 6 种 flavor（冷知识/比喻拆解/微型科幻/生活技巧/硬造学科/假日期新闻），
-     所以标记必须覆盖全部 6 种。一开始只写了「冷知识|知识点」，
-     结果抽到「用比喻解释再拆掉」那种 flavor 时误报 FAIL —— 是测试太窄，不是插件有问题。 */
-  trivia: /冷知识|知识点|·|关于|比喻|科幻|技巧|学科|定理|新闻|概念/,
+  /* mc-recipe 事件已按用户要求删除（m09978），它的标记一起删。
+     留着的话每掷一次都会多等 1.5 秒检查一个再也抽不到的事件。 */
+  /* 冷知识现在只出本地库的现成条目，没有 flavor 之分了。
+     标记仍然写宽一点：库里的话题横跨科学/人体/动物/日常/历史/语言/地理，
+     而回复预览只截得到开头一小段。 */
+  trivia: /冷知识|知识点|·|关于|说的是|其实|因为|所以/,
   joke: /笑点|笑话|包袱|段子|梗/,
   news: /新闻|来源|http|报道/i,
   'todo-shuffle': /文件|待办|紧急|修改|最近/,
@@ -120,7 +121,10 @@ let hit = null
 let rolls = 0
 while (rolls < 40 && !hit) {
   const before = listSessionIds()
-  const res = await post('/dsh-lucky-block/roll', {})
+  /* trigger: 'hold' —— 只有长按池（paper/news/todo-shuffle）会建会话。
+     用默认值也行（默认就是 hold），但显式写出来是为了让「这个探针测的是长按池」
+     这件事在代码里可见。 */
+  const res = await post('/dsh-lucky-block/roll', { trigger: 'hold' })
   rolls += 1
   const value = res.data?.value
   if (!value) {

@@ -1,5 +1,5 @@
 /**
- * 本地内容路径端到端探针：验证设置里勾了「不调用 AI」的事件真的零会话返回正文。
+ * 本地内容路径端到端探针：验证「左键单击」抽到的事件真的零会话、零 token 地返回正文。
  *
  * 用法：node tools/probe-local-path.mjs [port]
  *
@@ -8,9 +8,11 @@
  * 「没建会话，但也没给内容」—— 用户点下去什么都不发生，看起来像插件坏了。
  * 所以这里断言 `localText` 非空、且确实是本地库里的话（逐条比对）。
  *
- * 副作用：会**临时**把 config.json 的 localOnly 改成 ["joke"]，结束时复原。
+ * **不需要改配置**：以前要靠 config.json 里的 localOnly 把某个事件切成本地版，
+ * 那个开关已经删了。现在「单击 = 本地」是结构性的，`POST {trigger:'click'}` 就够了。
+ * 这让本探针变成纯只读 —— 失败也不会污染用户配置。
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,9 +22,6 @@ const ROOT = path.resolve(here, '..')
 const PORT = Number(process.argv[2] || 19399)
 const HOST = `127.0.0.1:${PORT}`
 const TOKEN = readFileSync(path.join(ROOT, 'docs', '.probe-token'), 'utf8').trim()
-
-const CONFIG = path.join('C:\\Users\\lyh\\.dsh', 'plugins', 'dsh-lucky-block', 'config.json')
-const original = readFileSync(CONFIG, 'utf8')
 
 function request(method, urlPath, headers, body) {
   return new Promise((resolve, reject) => {
@@ -54,53 +53,99 @@ const cookie = list.map((c) => String(c).split(';')[0]).join('; ')
 if (!cookie) { console.error('没拿到 cookie'); process.exit(1) }
 const H = { cookie, origin: `http://${HOST}`, 'content-type': 'application/json' }
 
-try {
-  // 只留 joke 在本地路径上，这样循环掷几次必然撞到它。
-  const cfg = JSON.parse(original)
-  cfg.localOnly = ['joke']
-  // 用 JSON.stringify 写，**不带 BOM**（PowerShell 的 Set-Content 会加，那是另一个坑）。
-  writeFileSync(CONFIG, JSON.stringify(cfg, null, 2), 'utf8')
+// 加载本地库，供逐条比对。
+const jokesMod = await import('../lib/jokes.js')
+const lib = await jokesMod.loadJokeLibrary()
+const knownJokes = new Set(lib.jokes.map((j) => j.text))
+check(knownJokes.size > 0, `本地笑话库已加载（${knownJokes.size} 条）`)
 
-  // 加载本地库，供逐条比对。
-  const jokesMod = await import('../lib/jokes.js')
-  const lib = await jokesMod.loadJokeLibrary()
-  const known = new Set(lib.jokes.map((j) => j.text))
-  check(known.size > 0, `本地笑话库已加载（${known.size} 条）`)
+const triviaRaw = readFileSync(path.join(ROOT, 'lib', 'trivia-data.json'), 'utf8')
+const triviaClean = triviaRaw.charCodeAt(0) === 0xfeff ? triviaRaw.slice(1) : triviaRaw
+const knownTrivia = new Set(JSON.parse(triviaClean).map((t) => t.text))
+check(knownTrivia.size > 0, `本地冷知识库已加载（${knownTrivia.size} 条）`)
 
-  let seenLocal = 0
-  let sawContent = false
-  for (let i = 0; i < 24 && !sawContent; i++) {
-    const r = await request('POST', '/dsh-lucky-block/roll', H, '{}')
-    const j = JSON.parse(r.body)
-    const v = j && j.value
-    if (!v) { check(false, `第 ${i + 1} 次 roll 返回了 value`, r.body.slice(0, 200)); break }
-    if (v.eventId !== 'joke') continue
-    seenLocal += 1
-    check(v.local === true, `joke 走本地路径（local=true）`, `local=${v.local}`)
-    check(v.sessionId === null, 'joke 没建会话（sessionId=null）', `sessionId=${v.sessionId}`)
-    check(v.createdNew === false, 'joke 没标记「新建了会话」', `createdNew=${v.createdNew}`)
-    const text = typeof v.localText === 'string' ? v.localText : ''
+/* 单击池共 5 条（弹窗/蓝屏/抽签/冷知识/冷笑话），其中 3 条出文本。
+   24 次里撞不到 joke 的概率极低，撞不到冷知识更低 —— 两条都要撞到才算真的验过。 */
+const seen = { joke: 0, trivia: 0, fortune: 0 }
+const textIds = new Set()
+let sawJoke = false
+let sawTrivia = false
+let agentInClick = 0
+
+for (let i = 0; i < 40 && !(sawJoke && sawTrivia); i++) {
+  const r = await request('POST', '/dsh-lucky-block/roll', H, JSON.stringify({ trigger: 'click' }))
+  const j = JSON.parse(r.body)
+  const v = j && j.value
+  if (!v) { check(false, `第 ${i + 1} 次 roll 返回了 value`, r.body.slice(0, 200)); break }
+
+  /* 核心不变量：**单击永远不建会话**。任何一条单击事件建了会话都是成本泄漏，
+     而且是用户完全没预期的那种（他只是点了一下）。 */
+  if (v.sessionId !== null) {
+    agentInClick += 1
+    check(false, `单击事件 ${v.eventId} 建了会话（不该发生）`, `sessionId=${v.sessionId}`)
+  }
+
+  const id = v.eventId
+  if (id in seen) seen[id] += 1
+  if (v.localText) textIds.add(id)
+
+  if (id === 'joke' && !sawJoke) {
+    const text = String(v.localText || '')
     check(text.trim().length > 0, 'joke 返回了非空正文', `长度 ${text.length}`)
     if (text.trim().length > 0) {
-      sawContent = true
-      // 正文以「· 」开头（localPayload 的拼装格式），去掉后应与库里某一条对上。
-      const body = text.replace(/^[·•\-\s]+/, '').trim()
+      sawJoke = true
+      /* 正文是「笑话正文」或「笑话正文\n\n—— 点评」。点评是独立随机抽的，
+         所以只比对笑话那一段是否在库里。 */
+      const head = text.split('\n\n')[0].trim()
       check(
-        known.has(body) || [...known].some((k) => body.startsWith(k)),
-        '返回的正文确实来自本地库（逐条比对）',
-        `前 60 字：${body.slice(0, 60)}`,
+        knownJokes.has(head) || [...knownJokes].some((k) => head.startsWith(k)),
+        'joke 的正文确实来自本地库（逐条比对）',
+        `前 60 字：${head.slice(0, 60)}`,
       )
-      console.log(`  正文预览：${text.slice(0, 120).replace(/\n/g, ' / ')}`)
+      console.log(`  joke 预览：${text.slice(0, 100).replace(/\n/g, ' / ')}`)
     }
   }
-  check(seenLocal > 0, `24 次内至少撞到一次 joke（实际 ${seenLocal} 次）`)
-  check(sawContent, '拿到了本地正文')
-} finally {
-  // 无论成败都复原用户配置 —— 探针不能留下副作用。
-  writeFileSync(CONFIG, original, 'utf8')
-  console.log('\n配置已复原。')
+
+  if (id === 'trivia' && !sawTrivia) {
+    const text = String(v.localText || '')
+    check(text.trim().length > 0, 'trivia 返回了非空正文', `长度 ${text.length}`)
+    if (text.trim().length > 0) {
+      sawTrivia = true
+      /* trivia 是 3 条以「· 」开头的列表。逐行剥掉前缀后，每行都该在库里。 */
+      const rows = text.split('\n').map((line) => line.replace(/^[·•\-\s]+/, '').trim()).filter(Boolean)
+      check(rows.length > 0, `trivia 至少给了一条（实际 ${rows.length} 条）`)
+      const allKnown = rows.every((row) => knownTrivia.has(row))
+      check(allKnown, 'trivia 的每一条都来自本地库（逐条比对）', allKnown ? '' : `可疑：${rows.find((r) => !knownTrivia.has(r))?.slice(0, 50)}`)
+      console.log(`  trivia 预览：${rows[0]?.slice(0, 80)}`)
+    }
+  }
+}
+
+check(sawJoke, `40 次单击内撞到 joke（实际 ${seen.joke} 次）`)
+check(sawTrivia, `40 次单击内撞到 trivia（实际 ${seen.trivia} 次）`)
+check(agentInClick === 0, '单击池里没有任何事件建过会话', `${agentInClick} 次违规`)
+check(textIds.size > 0, '至少有一条单击事件返回了文本', `实际 ${JSON.stringify([...textIds])}`)
+
+/* 反向：长按池必须**建会话**。只测单击不建会话的话，一个「所有事件都不建会话」
+   的坏实现也能全绿 —— 那样长按就彻底废了，而本探针看不出来。 */
+const hold = await request('POST', '/dsh-lucky-block/roll', H, JSON.stringify({ trigger: 'hold' }))
+const holdJson = JSON.parse(hold.body)
+const holdValue = holdJson && holdJson.value
+check(Boolean(holdValue), '长按 roll 返回了 value', hold.body.slice(0, 200))
+if (holdValue) {
+  check(
+    ['paper', 'news', 'todo-shuffle'].includes(holdValue.eventId),
+    `长按抽到的是 AI 事件（实际 ${holdValue.eventId}）`,
+  )
+  check(
+    typeof holdValue.sessionId === 'string' && holdValue.sessionId.length > 0,
+    '长按建了会话（sessionId 非空）',
+    `sessionId=${holdValue.sessionId}`,
+  )
+  check(holdValue.createdNew === true, '长按标记了「新建了会话」', `createdNew=${holdValue.createdNew}`)
+  console.log(`  长按事件：${holdValue.eventId} → 会话 ${holdValue.sessionId}`)
 }
 
 console.log('')
 if (fail > 0) { console.log(`!!! ${fail} 项未通过`); process.exit(1) }
-console.log('ALL GREEN —— 本地内容路径真的零 token 返回了库里的内容。')
+console.log('ALL GREEN —— 单击零会话返回本地内容，长按建会话调 AI。')
