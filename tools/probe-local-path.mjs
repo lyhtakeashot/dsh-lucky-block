@@ -64,15 +64,17 @@ const triviaClean = triviaRaw.charCodeAt(0) === 0xfeff ? triviaRaw.slice(1) : tr
 const knownTrivia = new Set(JSON.parse(triviaClean).map((t) => t.text))
 check(knownTrivia.size > 0, `本地冷知识库已加载（${knownTrivia.size} 条）`)
 
-/* 单击池共 5 条（弹窗/蓝屏/抽签/冷知识/冷笑话），其中 3 条出文本。
-   24 次里撞不到 joke 的概率极低，撞不到冷知识更低 —— 两条都要撞到才算真的验过。 */
+/* 单击池共 6 条（弹窗/蓝屏/抽签/冷知识/冷笑话/音频），其中 4 条必然出本地内容
+   —— 音频现在抽不到（清单为空）。60 次里撞不到 joke 的概率极低，
+   撞不到冷知识更低 —— 两条都要撞到才算真的验过。 */
 const seen = { joke: 0, trivia: 0, fortune: 0 }
 const textIds = new Set()
 let sawJoke = false
 let sawTrivia = false
 let agentInClick = 0
+let audioInClick = 0
 
-for (let i = 0; i < 40 && !(sawJoke && sawTrivia); i++) {
+for (let i = 0; i < 60 && !(sawJoke && sawTrivia); i++) {
   const r = await request('POST', '/dsh-lucky-block/roll', H, JSON.stringify({ trigger: 'click' }))
   const j = JSON.parse(r.body)
   const v = j && j.value
@@ -88,6 +90,16 @@ for (let i = 0; i < 40 && !(sawJoke && sawTrivia); i++) {
   const id = v.eventId
   if (id in seen) seen[id] += 1
   if (v.localText) textIds.add(id)
+  /* 音频事件现在抽不到（清单是空的），真抽到了说明有人已经填了清单 —— 那时要验的
+     是「给了音频字段、且有对应文件」，而不是现在的「事件不该出现」。 */
+  if (id === 'audio') {
+    audioInClick += 1
+    check(
+      Boolean(v.audio && v.audio.file && v.audio.title),
+      'audio 事件返回了可播放的文件信息',
+      v.audio ? `${v.audio.title} → ${v.audio.file}` : '没有 audio 字段',
+    )
+  }
 
   if (id === 'joke' && !sawJoke) {
     const text = String(v.localText || '')
@@ -121,10 +133,11 @@ for (let i = 0; i < 40 && !(sawJoke && sawTrivia); i++) {
   }
 }
 
-check(sawJoke, `40 次单击内撞到 joke（实际 ${seen.joke} 次）`)
-check(sawTrivia, `40 次单击内撞到 trivia（实际 ${seen.trivia} 次）`)
+check(sawJoke, `60 次单击内撞到 joke（实际 ${seen.joke} 次）`)
+check(sawTrivia, `60 次单击内撞到 trivia（实际 ${seen.trivia} 次）`)
 check(agentInClick === 0, '单击池里没有任何事件建过会话', `${agentInClick} 次违规`)
 check(textIds.size > 0, '至少有一条单击事件返回了文本', `实际 ${JSON.stringify([...textIds])}`)
+check(audioInClick === 0, '清单为空时 audio 事件不参与抽取（现在不该被抽到）', `实际 ${audioInClick} 次`)
 
 /* 反向：长按池必须**建会话**。只测单击不建会话的话，一个「所有事件都不建会话」
    的坏实现也能全绿 —— 那样长按就彻底废了，而本探针看不出来。 */

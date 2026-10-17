@@ -209,8 +209,8 @@ if (first && second) {
      是老断言假设了「探针一定是今天第一个抽签的人」。
      改成：两条一致 + 第二次带标记，去覆盖两种排列。 */
   check(
-    first.fortuneRepeated === second.fortuneRepeated,
-    '同一状态下抽到的 fortuneRepeated 标记一致',
+    second.fortuneRepeated === true,
+    '第二次抽一定带标记（第一次可带可不带）',
     `第一次=${String(first.fortuneRepeated)} 第二次=${String(second.fortuneRepeated)}`,
   )
   // 免责声明在两种情况下都必须还在 —— 提示语是**追加**，不是替换。
