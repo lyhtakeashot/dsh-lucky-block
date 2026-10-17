@@ -21,6 +21,7 @@ docs/*.log
 docs/.commitmsg.txt
 docs/.commit-msg.txt
 docs/commit-msg.txt
+docs/cm.txt
 
 # 编辑器 / 系统
 .DS_Store
