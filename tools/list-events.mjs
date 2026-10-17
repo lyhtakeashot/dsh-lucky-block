@@ -74,16 +74,21 @@ if (rows.length === 0) {
 
 const total = rows.reduce((sum, r) => sum + r.weight, 0)
 
+/* 三种 kind 的中文标签。
+   注意别退化成「不是 visual 就是 AI」——本地文本事件（今日运气）
+   同样不调模型，标成 AI 会让文档凭空多出一个不存在的调用。 */
+const KIND_LABEL = { agent: 'AI', visual: '视觉', local: '本地' }
+
 console.log(`${'id'.padEnd(14)} ${'类型'.padEnd(8)} ${'权重'.padEnd(4)} ${'概率'.padEnd(7)} 说明`)
 console.log('-'.repeat(72))
 for (const r of rows) {
   const pct = ((r.weight / total) * 100).toFixed(1) + '%'
-  const kindLabel = r.kind === 'visual' ? '视觉' : 'AI'
+  const kindLabel = KIND_LABEL[r.kind] ?? r.kind
   console.log(`${r.id.padEnd(14)} ${kindLabel.padEnd(6)} ${String(r.weight).padEnd(4)} ${pct.padEnd(7)} ${r.title}`)
 }
 console.log('-'.repeat(72))
 console.log(`共 ${rows.length} 个事件，权重合计 ${total}`)
 
-// 视觉类事件（会直接在界面上表演，零 token）：从 kind 字段读，不靠 id 猜。
-const visual = rows.filter((r) => r.kind === 'visual')
-console.log(`其中带界面表演的（零 token）：${visual.map((r) => r.title).join('、') || '（无）'}`)
+// 不建会话、不调模型的事件（视觉表演 + 本地文本）：从 kind 字段读，不靠 id 猜。
+const localOnly = rows.filter((r) => r.kind === 'visual' || r.kind === 'local')
+console.log(`其中零 token 的（不建会话、不调模型）：${localOnly.map((r) => r.title).join('、') || '（无）'}`)

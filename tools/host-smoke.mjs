@@ -117,12 +117,13 @@ const evs = pingValue.events || []
 console.log('events:', JSON.stringify(evs))
 
 let visualFail = 0
+const KNOWN_KINDS = new Set(['visual', 'agent', 'local'])
 for (const e of evs) {
   if (e.kind === 'visual' && e.visual === null) {
     console.error(`FAIL  事件 ${e.id} 标为 visual 却没有 visual spec`)
     visualFail += 1
   }
-  if (e.kind !== 'visual' && e.kind !== 'agent') {
+  if (!KNOWN_KINDS.has(e.kind)) {
     console.error(`FAIL  事件 ${e.id} 的 kind 非法: ${e.kind}`)
     visualFail += 1
   }
@@ -130,8 +131,10 @@ for (const e of evs) {
 
 const visualIds = evs.filter((e) => e.kind === 'visual').map((e) => e.id)
 const agentIds = evs.filter((e) => e.kind === 'agent').map((e) => e.id)
+const localIds = evs.filter((e) => e.kind === 'local').map((e) => e.id)
 console.log('visual events:', JSON.stringify(visualIds))
 console.log('agent events:', JSON.stringify(agentIds))
+console.log('local text events:', JSON.stringify(localIds))
 
 if (visualIds.length === 0) {
   console.error('FAIL  没有任何 visual 事件（popups/bluescreen 应该被标为 visual）')
@@ -144,6 +147,20 @@ if (!visualIds.includes('bluescreen') || !visualIds.includes('popups')) {
 if (agentIds.length === 0) {
   console.error('FAIL  没有任何 agent 事件')
   visualFail += 1
+}
+/* 今日运气必须是 kind='local'：它没有 AI 版本，不该出现在设置面板的
+   「是否调用 AI」清单里，也不该在投中时建会话。 */
+if (!localIds.includes('fortune')) {
+  console.error('FAIL  fortune 应为 kind=local（纯本地抽签，不调 AI）')
+  visualFail += 1
+}
+/* local 事件不能同时声明 local 语料：那会让它出现在 settings 的可本地化清单里，
+   给用户一个「关掉 AI」的开关，而它本来就不调 AI —— 点了没有任何变化。 */
+for (const e of evs) {
+  if (e.kind === 'local' && e.local === true) {
+    console.error(`FAIL  事件 ${e.id} 既是 kind=local 又声明了 local 语料，设置面板会出现无效开关`)
+    visualFail += 1
+  }
 }
 
 if (visualFail > 0) process.exit(1)
