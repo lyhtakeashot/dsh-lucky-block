@@ -19,6 +19,8 @@ docs/*.log
 # git commit -F 用的临时信息文件（PowerShell 的 here-string 传中文会被当路径解析，
 # 只能先落盘再 -F；忘了删就会被 git add -A 一起提交，踩过一次）
 docs/.commitmsg.txt
+docs/.commit-msg.txt
+docs/commit-msg.txt
 
 # 编辑器 / 系统
 .DS_Store
