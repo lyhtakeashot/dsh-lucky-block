@@ -54,8 +54,8 @@ console.log('warns:', warns.length, JSON.stringify(warns.slice(0, 5)))
 console.log('events hooked:', Object.keys(ev.handlers))
 
 const routeCount = calls.filter((c) => c[0] === 'route').length
-if (routeCount !== 5) {
-  console.error(`FAIL  期望注册 5 条路由（ping/roll/settings/save-settings/sound），实际 ${routeCount}`)
+if (routeCount !== 6) {
+  console.error(`FAIL  期望注册 6 条路由（ping/roll/settings/save-settings/dice-prompt/sound），实际 ${routeCount}`)
   process.exit(1)
 }
 
@@ -373,8 +373,8 @@ if (def.address !== '用户') {
 }
 
 // 2. 用户配置覆盖：整段替换语义
-const overridden = persona.mergePersona({ identity: '一把不说话的枪。', traits: ['只说一句话。'], bogus: 1, traits2: [] })
-if (overridden.identity !== '一把不说话的枪。') {
+const overridden = persona.mergePersona({ identity: '一个不说话的进程。', traits: ['只说一句话。'], bogus: 1, traits2: [] })
+if (overridden.identity !== '一个不说话的进程。') {
   console.error('FAIL  identity 未被覆盖')
   personaFail += 1
 }

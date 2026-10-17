@@ -69,25 +69,33 @@ const roll2 = await api('/dsh-lucky-block/roll', { method: 'POST', body: '{}' })
 const rv2 = roll2.json?.value
 check(rv2?.flipped === undefined, '已翻转状态下不再重复报 flipped', JSON.stringify(rv2?.flipped))
 
-/* 读回该会话的 prompt，断言用的是 flippedTraits（礼貌版） */
+/* 读回该会话被注入的系统提示，断言用的是 flippedTraits（礼貌版）。
+   注意注入内容**不在会话投影缓存里** —— 长内容改走 system prompt 之后，
+   投影里只剩一行用户消息。改从宿主内存路由取（见 probe-persona.mjs 头部说明）。 */
 const projDir = path.join(dshHome, 'storages', 'session_projcache', 'sessions')
-if (rv?.sessionId) {
-  const target = `session-${String(rv.sessionId).replace(/^session-/, '')}.json`
-  let text = null
+const flipSessionId = rv?.sessionId ?? rv2?.sessionId ?? null
+if (flipSessionId) {
+  const target = `session-${String(flipSessionId).replace(/^session-/, '')}.json`
+  let userText = null
   for (let i = 0; i < 30; i += 1) {
     try {
       const raw = JSON.parse(readFileSync(path.join(projDir, target), 'utf8'))
-      text = raw?.record?.rows?.titleInput?.val?.first?.text ?? null
+      userText = raw?.record?.rows?.titleInput?.val?.first?.text ?? null
     } catch { /* 还没落盘 */ }
-    if (text) break
+    if (userText) break
     await new Promise((r) => setTimeout(r, 500))
   }
-  check(!!text, '拿到翻转态会话的 prompt')
+  const injected = await api(`/dsh-lucky-block/dice-prompt?sessionId=${encodeURIComponent(String(flipSessionId))}`)
+  const text = typeof injected.json?.value?.text === 'string' ? injected.json.value.text : null
+  check(!!text, '拿到翻转态会话的注入内容')
   if (text) {
-    check(text.includes('爱狗人士'), 'prompt 用了翻转后的「爱狗人士」人格')
-    check(!text.includes('你对这件事毫无道德负担'), 'prompt 不再含默认人格的狠话')
+    check(text.includes('礼貌模式'), 'prompt 用了翻转后的「礼貌模式」人格')
+    check(!text.includes('你把每一次对话都当成一张待处理的工单'), 'prompt 不再含默认人格的狠话')
+    check(!/枪|哼歌|bum bum|干掉目标/.test(text), 'prompt 不含「武器」与「唱歌」元素')
     check(/礼貌|敬语|道歉|抱歉|不满意/.test(text), 'prompt 体现礼貌腔')
   }
+} else {
+  check(false, '两次 roll 都没建会话（都抽到视觉/本地事件），无法验证翻转态人格 —— 重跑一次')
 }
 
 /* 复位：删掉状态文件，别把用户的真实计数污染成 50 */

@@ -151,6 +151,65 @@ if (hit) {
   console.log(text.split('\n').map((l) => `      | ${l}`).join('\n'))
 }
 
+/* ---------- 2b. 一天只抽一次：当天再抽必须拿到同一签 ---------- */
+
+/* 这条必须**真的再抽一次**来验证，不能只查状态文件 ——
+   状态写对了但 rollDice 忘了读，表现依然是「每次都能重抽」，
+   而那才是用户真正会遇到的 bug。
+   为了不靠运气，这里先把状态文件清掉，让接下来这次必是「今日首次」。 */
+const fortuneStatePath = path.join(dshHome, 'plugins', 'dsh-lucky-block', 'fortune-state.json')
+let savedFortuneState = null
+try {
+  if (existsSync(fortuneStatePath)) savedFortuneState = readFileSync(fortuneStatePath, 'utf8')
+  await (await import('node:fs/promises')).rm(fortuneStatePath, { force: true })
+} catch (error) {
+  console.error(`  清理旧状态失败（探针会不准）：${error?.message ?? error}`)
+}
+
+let first = null
+let second = null
+for (let i = 0; i < 60 && !(first && second); i += 1) {
+  const res = await post('/dsh-lucky-block/roll', {})
+  const value = res.data?.value
+  if (!value || value.eventId !== 'fortune') continue
+  if (!first) {
+    first = value
+    await new Promise((r) => setTimeout(r, 400))
+    // 确认真的落了盘 —— 否则「第二次拿到同一签」可能只是巧合
+    check(existsSync(fortuneStatePath), '抽完之后状态文件落盘了', fortuneStatePath)
+  } else {
+    second = value
+  }
+}
+
+check(Boolean(first && second), '60 次内抽到 fortune 至少两次（用于验证不可重抽）')
+if (first && second) {
+  const firstName = first.localText?.match(/今日运气：(\S+)/)?.[1]
+  const secondName = second.localText?.match(/今日运气：(\S+)/)?.[1]
+  check(firstName === secondName, '当天第二次抽到同一档签', `第一次「${firstName}」第二次「${secondName}」`)
+  check(
+    second.localText?.includes('今天已经抽过了'),
+    '第二次抽提示「今天已经抽过了」',
+    (second.localText || '').split('\n').filter((l) => l.includes('已经抽过')).join(' / '),
+  )
+  check(second.fortuneRepeated === true, '第二次抽带 fortuneRepeated 标记')
+  check(first.fortuneRepeated === undefined, '第一次抽不带 fortuneRepeated 标记')
+  // 免责声明在两种情况下都必须还在 —— 提示语是**追加**，不是替换。
+  check(second.localText?.includes('无科学依据'), '重复抽仍带「无科学依据」免责声明')
+}
+
+/* 复位：把探针动过的状态还给用户，别让用户的签被探针清掉。 */
+try {
+  const { writeFile } = await import('node:fs/promises')
+  if (savedFortuneState !== null) {
+    await writeFile(fortuneStatePath, savedFortuneState, 'utf8')
+  } else {
+    await (await import('node:fs/promises')).rm(fortuneStatePath, { force: true })
+  }
+} catch (error) {
+  console.error(`  复位今日运气状态失败：${error?.message ?? error}`)
+}
+
 /* ---------- 3. 六档的权重分布（直接测抽取函数，不靠掷骰子碰运气）---------- */
 
 /* 这里刻意**不用**「多掷几次 roll 看抽到几档」来验证：

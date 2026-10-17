@@ -32,10 +32,24 @@
 **视觉类（弹窗 / 蓝屏）与「抽今日运气」完全不建会话、不调 AI、零 token、零延迟** ——
 点下去立刻有反应。剩下 6 个才会开新会话。
 
+「抽今日运气」**一天只抽一次**：当天再点，返回的还是那一签，并在末尾注明
+「今天已经抽过了，签不会变。明天再来。」。状态记在
+`$DSH_HOME/plugins/dsh-lucky-block/fortune-state.json`，删掉这个文件就等于当天重抽。
+
 「抽今日运气」的签文权重是刻意偏吉的：**吉类合计 90%**（鸿运齐天 5% / 大吉 26% /
 中吉 33% / 小吉 26%），平 9.9%，凶只有 **0.1%**；
 而且**「凶」的正文是反着写的**（「从某种角度来说，你运气还挺好 —— 今天该踩的坑都提前踩完了」），
 抽到下签也能笑一下。这个插件是用来打发时间的，不是用来给人添堵的。
+
+### 骰子会话里你只会看到一行字
+
+开新会话的那 6 个事件，**用户消息只有一行**（`🎲 随机事件：时事新闻速览`），
+人格设定和任务正文走的是**系统提示**，不会糊在你眼前。
+
+这样做纯粹是为了观感 —— 之前用户消息里塞着几百字的指令墙，点进会话第一眼就是它。
+需要说明的是，宿主没有「发一条不显示的消息」这种能力（`PromptContentPart` 只有
+text / image / file 三种，没有任何可见性字段），所以这里不是把消息藏起来，
+而是**根本不把它发成消息**。
 
 清单可用 `node tools/list-events.mjs` 随时重新生成 —— 它直接从 `lib/index.js`
 的 `buildEvents()` 里解析，不会和代码漂移。
@@ -216,7 +230,7 @@ npm pack
 端到端探针（需要先起克隆 profile，流程见 `docs/探针流程.md`）：
 `probe-sound.mjs`、`probe-settings.mjs`、`probe-visual-ids.mjs`、
 `probe-persona.mjs`、`probe-flip.mjs`、`probe-flip-prompt.mjs`、
-`probe-local-path.mjs`、`probe-fortune.mjs`。
+`probe-local-path.mjs`、`probe-fortune.mjs`、`probe-dice-prompt.mjs`。
 
 调研笔记与语料候选文件归档在 `docs/research-notes/`（考据报告、语料来源、
 合并器的候选 JSON）。

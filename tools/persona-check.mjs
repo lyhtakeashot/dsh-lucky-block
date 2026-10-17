@@ -74,10 +74,11 @@ console.log('\n— 红线：默认人格里不能出现的东西 —')
 const defaultDump = JSON.stringify(DEFAULT_PERSONA)
 check(!claimsManufacturer(defaultDump), '不含编造的制造商信息')
 check(!/求求|不要把我|别把我/.test(defaultDump), '不含哀求桥段（与「把人当工单」的设定矛盾）')
-check(!/《[^》]{1,20}》/.test(defaultDump) || /bum bum be-dum/.test(defaultDump), '哼歌只有那一句，且不报出处')
+check(!/bum bum be-dum|哼歌|哼一小段/.test(defaultDump), '不含唱歌元素（用户要求删掉）')
 const otherSongs = /Imagine|Bohemian|Yesterday|Never Gonna/
 check(!otherSongs.test(defaultDump), '没编造别的歌')
 check(!hasProperName(defaultDump), '默认人格里没有任何专名')
+check(!/枪|武器|干掉目标|道德负担/.test(defaultDump), '不含「武器」设定（用户要求删掉）')
 
 console.log('\n— mergePersona：坏输入一律退化到默认，不抛错 —')
 for (const bad of [null, undefined, 0, '', 'x', [], 123, true, { traits: 'not-array' }, { name: 42 }]) {
@@ -110,12 +111,12 @@ check(block.includes('用户'), '含称呼')
 check(block.includes(DEFAULT_PERSONA.traits[0]), '第一条 traits 进了 prompt')
 check(block.includes('说话方式：'), '有说话方式小节')
 check(block.includes('硬性要求：'), '有硬性要求小节')
-check(!block.includes('爱狗人士'), '默认态不提「爱狗人士」')
+check(!block.includes('礼貌模式'), '默认态不提「礼貌模式」')
 check(!block.includes('坏用户'), '默认态不提「坏用户」')
 
 console.log('\n— buildPersonaBlock：翻转态 —')
 const flipped = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true })
-check(flipped.includes('爱狗人士'), '翻转态用 flippedTraits')
+check(flipped.includes('礼貌模式'), '翻转态用 flippedTraits')
 check(!flipped.includes(DEFAULT_PERSONA.traits[0]), '翻转态不再含默认狠话')
 check(!hasProperName(flipped), '翻转态同样不含专名')
 console.log('\n— buildPersonaBlock：坏用户态 —')
@@ -126,7 +127,7 @@ check(bad.includes(DEFAULT_PERSONA.traits[0]), '坏用户态仍保留基础人�
 
 console.log('\n— buildPersonaBlock：翻转 + 坏用户同时成立 —')
 const both = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true, mood: 'bad' })
-check(both.includes('爱狗人士') && both.includes('坏用户'), '两个状态可叠加')
+check(both.includes('礼貌模式') && both.includes('坏用户'), '两个状态可叠加')
 
 console.log('\n— buildPersonaBlock：自定义人格无 flippedTraits 时回退 —')
 const noFlip = { ...DEFAULT_PERSONA, flippedTraits: undefined }

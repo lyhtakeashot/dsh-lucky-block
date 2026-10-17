@@ -3,12 +3,21 @@
  *
  * 检查项：
  *   1. /ping 拿到的事件清单里有 joke / news，并且带 persona 状态与 chatter 字段；
- *   2. 掷骰子后，**新会话里实际发出的 prompt** 含人格段（不是我们自以为发了）；
- *   3. 视觉事件返回 quip（本地台词，零 token）；
- *   4. 人格计数确实递增。
+ *   2. 掷骰子后，**骰子会话实际收到的系统提示**含人格段与任务正文；
+ *   3. 用户消息本身只有一行（长内容不再糊在用户眼前）；
+ *   4. 视觉事件返回 quip（本地台词，零 token）；
+ *   5. 人格计数确实递增。
  *
- * 判据是**会话投影缓存里的真实 prompt**，不是插件自己的返回值 ——
- * 后者只能证明我们想发什么，前者才能证明宿主真的把这段文字送进了模型。
+ * ⚠️ 判据来源变过一次，值得记住为什么。
+ * 原来这里读会话投影缓存的 `titleInput.val.first.text`（首条用户消息）来做内容断言。
+ * 后来骰子会话的长内容改走 system prompt，用户消息只剩一行「🎲 随机事件：xxx」，
+ * 于是这 5 条断言全部报 FAIL —— 但插件其实完全正常。
+ *
+ * 更要紧的是**投影缓存里查不到注入内容**：`contextTimeline.surface` 只记
+ * user/inject/skill/assistant 四类，注入段不进 surface；`systems` 只有一个 tokens 计数。
+ * 也就是说「注入没生效」和「注入生效了」在磁盘上长得一模一样。
+ * 所以宿主新增了只读的 `/dsh-lucky-block/dice-prompt` 路由把内存里的注入文本暴露出来，
+ * 这个探针改从那里取内容，同时保留「用户消息只有一行」的断言。
  *
  * 用法：node tools/probe-persona.mjs <port>
  */
@@ -102,34 +111,64 @@ console.log('      persona =', JSON.stringify(pv?.persona))
 
 /* ---------- 2. 掷骰子，验证真实 prompt 含人格 ---------- */
 const before = listProjections()
-const roll = await api('/dsh-lucky-block/roll', { method: 'POST', body: '{}' })
-const rv = roll.json?.value
-check(roll.status === 200 && !!rv, 'roll 返回 200', JSON.stringify(roll.json?.error ?? ''))
-console.log('      事件 =', rv?.eventId, '| 会话 =', rv?.sessionId, '| quip =', JSON.stringify(rv?.quip))
+/*
+ * 必须循环，不能指望第一次就抽到 agent 事件。
+ * 9 个事件里有 3 个不建会话（popups 8% / bluescreen 8% / fortune 12%），
+ * 合计 28% —— 首跑就撞上本地事件的概率接近三成。曾经因此报过一条
+ * 「roll 返回角色台词 quip」的 FAIL，其实插件完全正常，是探针假设错了。
+ */
+let rv = null
+let attempts = 0
+for (; attempts < 12 && !rv; attempts += 1) {
+  const roll = await api('/dsh-lucky-block/roll', { method: 'POST', body: '{}' })
+  const v = roll.json?.value
+  if (roll.status !== 200 || !v) {
+    check(false, 'roll 返回 200', JSON.stringify(roll.json?.error ?? ''))
+    break
+  }
+  console.log(`      attempt ${attempts + 1}: 事件=${v.eventId} 会话=${v.sessionId ?? '(不建会话)'} quip=${JSON.stringify(v.quip)}`)
+  if (v.sessionId) rv = v
+}
+check(!!rv, '12 次内抽到了会建会话的事件', `实际第 ${attempts} 次`)
 
-check(typeof rv?.quip === 'string' && rv.quip.length > 0, 'roll 返回角色台词 quip')
-
-if (rv?.sessionId) {
+if (rv) {
+  check(typeof rv.quip === 'string' && rv.quip.length > 0, 'roll 返回角色台词 quip', JSON.stringify(rv.quip))
   // 等会话投影落盘（异步写，别用固定 sleep 赌）
   const target = `session-${rv.sessionId.replace(/^session-/, '')}.json`
-  let promptText = null
+  let userText = null
   for (let i = 0; i < 40; i += 1) {
-    promptText = firstPromptOf(target)
-    if (promptText) break
+    userText = firstPromptOf(target)
+    if (userText) break
     await new Promise((r) => setTimeout(r, 500))
   }
   const after = listProjections()
   const added = [...after].filter((f) => !before.has(f))
   console.log(`      新增投影 ${added.length} 个, 目标 ${target} 命中=${added.includes(target)}`)
 
-  check(!!promptText, '拿到新会话的真实首条 prompt')
+  /* ---------- 2a. 用户消息只剩一行 ---------- */
+  check(!!userText, '拿到新会话的首条用户消息')
+  if (userText) {
+    console.log('      用户消息 =', JSON.stringify(userText))
+    check(!userText.includes('\n'), '用户消息只有一行', `换行 ${userText.split('\n').length - 1} 个`)
+    check(userText.length <= 40, '用户消息很短（长内容没糊到用户眼前）', `${userText.length} 字`)
+    check(!userText.includes('［角色设定'), '用户消息不含人格段')
+    check(!userText.includes('以下是本次要做的事'), '用户消息不含任务正文')
+  }
+
+  /* ---------- 2b. 系统提示里才是真正的指令 ---------- */
+  const injected = await api(`/dsh-lucky-block/dice-prompt?sessionId=${encodeURIComponent(rv.sessionId)}`)
+  const iv = injected.json?.value
+  check(injected.status === 200 && iv?.found === true, '宿主登记了这个骰子会话的注入内容',
+    iv?.found ? '' : `known=${JSON.stringify(iv?.known ?? [])}`)
+  const promptText = typeof iv?.text === 'string' ? iv.text : null
+
   if (promptText) {
     // 人格标记
-    check(promptText.includes('［角色设定'), 'prompt 含人格段标题')
-    check(!/《[^》]{1,20}》|\b[A-Z][a-z]{3,}\b/.test(promptText), 'prompt 不含任何专名')
-    check(promptText.includes('用户'), 'prompt 用「用户」称呼')
-    check(/冷知识|音量提高|权限/.test(promptText), 'prompt 含标志句式')
-    check(promptText.includes('以下是本次要做的事'), 'prompt 含任务分隔标记')
+    check(promptText.includes('［角色设定'), '系统提示含人格段标题')
+    check(!/《[^》]{1,20}》|\b[A-Z][a-z]{3,}\b/.test(promptText), '系统提示不含任何专名')
+    check(promptText.includes('用户'), '系统提示用「用户」称呼')
+    check(/冷知识|音量提高|权限/.test(promptText), '系统提示含标志句式')
+    check(promptText.includes('以下是本次要做的事'), '系统提示含任务分隔标记')
     // 任务正文必须还在（人格不能把任务挤掉）。
     // 按**本次实际抽中的事件**挑对应标记，不要用一条宽松的大正则 ——
     // 那种写法会让「任务正文丢了但恰好匹配上别处的词」也判通过。
@@ -145,19 +184,19 @@ if (rv?.sessionId) {
     if (marker === undefined) {
       check(false, `任务正文断言：未知事件 ${rv.eventId}，请把它的标记加进 TASK_MARKERS`)
     } else {
-      check(promptText.includes(marker), `prompt 保留了 ${rv.eventId} 的任务正文`, `标记=${marker}`)
+      check(promptText.includes(marker), `系统提示保留了 ${rv.eventId} 的任务正文`, `标记=${marker}`)
     }
     // 收尾点评请求也必须到位，否则只有人格在说话、没有结尾
-    check(promptText.includes('最后一步'), 'prompt 含收尾点评请求')
+    check(promptText.includes('最后一步'), '系统提示含收尾点评请求')
     // 不允许**断言式**地说出制造商信息。
     // 注意不能直接匹配「制造商」三个字：prompt 里本来就有一句指令
     // 「不要给自己编造制造商」，那是规矩本身，不是泄漏（persona-check 里踩过同一个坑）。
     // 判据：命中点前 14 字内出现否定词就算讲规矩。
     const manufacturerHits = [...promptText.matchAll(/(制造商|出厂|生产商)/g)]
       .filter((m) => !/(不要|不得|别|禁止|不许|不能|没有|未)/.test(promptText.slice(Math.max(0, m.index - 14), m.index)))
-    check(manufacturerHits.length === 0, 'prompt 未出现编造的制造商信息',
+    check(manufacturerHits.length === 0, '系统提示未出现编造的制造商信息',
       manufacturerHits.length ? `命中 ${manufacturerHits.length} 处` : '')
-    console.log('      --- prompt 前 300 字 ---')
+    console.log('      --- 系统提示前 300 字 ---')
     console.log(promptText.slice(0, 300).split('\n').map((l) => `      | ${l}`).join('\n'))
   }
 }
