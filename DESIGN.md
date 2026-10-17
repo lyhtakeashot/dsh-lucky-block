@@ -332,15 +332,14 @@ id / weight / title，打印概率表。文档与代码不会漂移。
 
 后来用户又提了一次：「枪」和「唱歌」这两个元素本身就是多余的。于是把它们整个删掉：
 `identity` 从「一把会说话的枪的内置 AI」改成纯系统程序，traits 从 9 条减到 8 条
-（去掉「智能枪/干掉目标/毫无道德负担」那条与哼歌那条），翻转态的「爱狗人士」改成中性的
-「礼貌模式」。理由：这套人格的价值全在**说话方式**上（工单口吻、系统话术、冷知识、话短），
-不在「它是什么东西」上；挂一个具体载体会让模型时不时冒出「我这把枪……」这种自述，
-而用户要的只是那个语气。
+（去掉「智能枪/干掉目标/毫无道德负担」那条与哼歌那条）。理由：这套人格的价值全在
+**说话方式**上（工单口吻、系统话术、冷知识、话短），不在「它是什么东西」上；挂一个
+具体载体会让模型时不时冒出「我这把枪……」这种自述，而用户要的只是那个语气。
 
 ### 9.1 为什么单独一个 `lib/persona.js`
 
 人格层是**纯函数**（进什么出什么，不碰 fs、不碰 ctx），所以能真 import 进单元测试。
-`tools/persona-check.mjs` 有 62 条断言，测默认人格形状、覆盖语义、垃圾输入、
+`tools/persona-check.mjs` 有 63 条断言，测默认人格形状、覆盖语义、垃圾输入、
 人格段拼装、任务正文保护。宿主侧那些函数全都依赖 ctx，只能抽源码 eval 或跑假 ctx。
 
 ### 9.2 三段式拼装
@@ -355,19 +354,27 @@ id / weight / title，打印概率表。文档与代码不会漂移。
 中间那句分隔语是刻意的拐杖 —— 直接拼接时模型会把「角色扮演」当成主任务。
 最后再挂一段收尾点评请求，让它在干完活之后用自己的口气说一两句。
 
-### 9.3 状态机与单向翻转
+### 9.3 状态机：只剩一个「坏用户」标记，没有第二人格
 
-`$DSH_HOME/plugins/dsh-lucky-block/persona-state.json` 存 `{diceCount, flipped, mood}`。
-掷满 `flipAfter`（默认 **50**，致敬游戏里「击杀 50 人」）次后 `flipped` 置真，
-人格段换成 `flippedTraits`（礼貌版）。**翻转单向不可逆** —— 游戏里玩家也拦不住。
+`$DSH_HOME/plugins/dsh-lucky-block/persona-state.json` 存 `{diceCount, mood}`。
+
+`diceCount` 现在**只是统计数字**（显示在 `/ping` 里），不再驱动任何人格变化。
+`mood` 只有一个可选值 `bad`（人格崩溃降级，只会重复「坏蛋用户」），默认 `normal`。
+
+**曾经有过一个「掷满 N 次单向翻转成礼貌模式」的机制，已经整个删掉。**
+用户的原话是「这只是个话唠系统」—— 一个人格从头到尾就够，多一个第二人格反而让它
+显得像个有隐藏设定的角色，而不是一个碎嘴的系统程序。
+
+删干净的地方：`DEFAULT_PERSONA.flippedTraits`、`buildPersonaBlock`/`wrapWithPersona`
+的 `state.flipped` 分支、`VISUAL_QUIPS_FLIPPED`、`CHATTER_LINES_FLIPPED`、
+配置项 `personaFlipAfter`、`flipThreshold()`、客户端那条「原模式停用」的播报。
+向后兼容：老 `config.json` 里的 `personaFlipAfter` 与 `persona.flippedTraits` 会被
+静默忽略（不报错、不崩、不进 prompt），老 `persona-state.json` 里的 `flipped:true`
+也不再有任何效果。
 
 `normalizePersona()` 是公开入口的兜底：`mergePersona` 有防御，但 `buildPersonaBlock`
 早期没有，调用方直接传 config.json 原始值时会抛 `TypeError: traits is not iterable`。
 异常发生在**会话创建之后**，症状是「骰子转了但什么都没发生」，极难排查。
-
-`flippedTraits` 缺失时退回 **`p.traits`** 而不是内置礼貌版：用户自定义了 traits 却没写
-`flippedTraits`，意思是「我没准备第二人格」，这时该继续说他自己写的性格，而不是
-突然给他装上别人的第二人格 —— 而且完全没有提示。
 
 ### 9.4 主动插话（克制优先）
 
@@ -632,7 +639,7 @@ Audio 元素（播完自己摘出池子），页面切到后台自动静音。**
 `contextTimeline.surface` 只记 user / inject / skill / assistant 四类，注入段不进 surface；
 `systems` 只有一个 tokens 计数。也就是说「注入没生效」和「注入生效了」在投影缓存里
 长得一模一样。所以新增了一个只读路由 `/dsh-lucky-block/dice-prompt?sessionId=...`
-把内存里的注入文本暴露出来，让 `probe-persona` / `probe-flip` / `probe-dice-prompt`
+把内存里的注入文本暴露出来，让 `probe-persona` / `probe-dice-prompt`
 能直接断言注入内容。没命中时它还会返回 `known`（当前登记过的会话 id 列表），
 用来区分「查错了会话」和「根本没登记」—— 这是两种完全不同的故障。
 

@@ -355,13 +355,18 @@ let personaFail = 0
 // 注意：字段清单里**没有 `name`** —— 用户要求 prompt 里不出现任何角色名，
 // 所以人格层整个不带名字（`mergePersona` 仍接受 `name` 覆盖以兼容老 config，只是不透出）。
 const def = persona.mergePersona(null)
-for (const key of ['identity', 'address', 'traits', 'volumeLines', 'badUserLines', 'flippedTraits']) {
+for (const key of ['identity', 'address', 'traits', 'volumeLines', 'badUserLines']) {
   const v = def[key]
   const ok = Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.length > 0
   if (!ok) {
     console.error(`FAIL  默认人格缺字段 ${key}`)
     personaFail += 1
   }
+}
+// 翻转机制已整个删掉（用户要求：它只是个话唠系统，不该有第二人格）
+if ('flippedTraits' in def) {
+  console.error('FAIL  人格层不该再有 flippedTraits')
+  personaFail += 1
 }
 if (!(def.name === undefined || typeof def.name === 'string')) {
   console.error('FAIL  name 若存在必须是字符串')
@@ -401,15 +406,19 @@ for (const junk of [42, 'x', [], true]) {
   }
 }
 
-// 3. 人格块内容：翻转/坏用户两条分支都要出东西
+// 3. 人格块内容：正常/坏用户两条分支都要出东西
 const normalBlock = persona.buildPersonaBlock(def, {})
-const flippedBlock = persona.buildPersonaBlock(def, { flipped: true })
 const badBlock = persona.buildPersonaBlock(def, { mood: 'bad' })
-for (const [label, block] of [['normal', normalBlock], ['flipped', flippedBlock], ['bad', badBlock]]) {
+for (const [label, block] of [['normal', normalBlock], ['bad', badBlock]]) {
   if (typeof block !== 'string' || block.length < 40) {
     console.error(`FAIL  ${label} 人格块过短`)
     personaFail += 1
   }
+}
+// 传 flipped 不再有任何效果 —— 机制已删，这里守住「别偷偷长回来」
+if (persona.buildPersonaBlock(def, { flipped: true }) !== normalBlock) {
+  console.error('FAIL  flipped 参数不该再改变人格块')
+  personaFail += 1
 }
 if (!badBlock.includes('坏蛋用户')) {
   console.error('FAIL  坏用户态应包含「坏蛋用户」')

@@ -2,7 +2,7 @@
  * lib/persona.js 的单元测试。
  *
  * 为什么要单独测：人格层是「单一来源」，所有事件共用它。它一旦退化
- * （比如用户配置把 traits 顶掉、或者翻转态拿错字段），是**八个事件一起走样**，
+ * （比如用户配置把 traits 顶掉、或者入参不是对象），是**九个事件一起走样**，
  * 而且不会报错 —— prompt 照样发给模型，只是腔调不对。这类静默退化必须靠测试钉住。
  *
  * 本文件直接 import 真模块（不抽源码、不复制），因为 persona.js 是纯函数、
@@ -66,7 +66,7 @@ function claimsManufacturer(text) {
 console.log('— 默认人格的基本形状 —')
 check(!('name' in DEFAULT_PERSONA), '默认人格没有 name 字段（用户要求 prompt 不出现角色名）')
 check(Array.isArray(DEFAULT_PERSONA.traits) && DEFAULT_PERSONA.traits.length > 0, '有 traits')
-check(Array.isArray(DEFAULT_PERSONA.flippedTraits) && DEFAULT_PERSONA.flippedTraits.length > 0, '有 flippedTraits')
+check(!('flippedTraits' in DEFAULT_PERSONA), '没有第二人格（用户要求删掉翻转机制）')
 check(DEFAULT_PERSONA.address === '用户', '称呼固定为「用户」')
 check(typeof DEFAULT_PERSONA.identity === 'string' && DEFAULT_PERSONA.identity.length > 0, '有身份描述')
 
@@ -95,7 +95,12 @@ check(!buildPersonaBlock(mergePersona({ name: '小方块' })).includes('小方�
 console.log('\n— mergePersona：正常覆盖是整段替换 —')
 const custom = mergePersona({ traits: ['只说你爱听的。'] })
 check(custom.traits.length === 1 && custom.traits[0] === '只说你爱听的。', 'traits 整段替换而非追加', `得到 ${custom.traits.length} 条`)
-check(custom.flippedTraits.length === DEFAULT_PERSONA.flippedTraits.length, '未覆盖的字段保留默认')
+
+console.log('\n— mergePersona：老配置里的 flippedTraits 被静默丢掉 —')
+const legacy = mergePersona({ traits: ['新性格。'], flippedTraits: ['旧第二人格。'] })
+check(!('flippedTraits' in legacy), '翻转机制已删，flippedTraits 不再保留')
+check(legacy.traits[0] === '新性格。', '但同一次配置里的 traits 照常生效')
+check(!buildPersonaBlock(legacy).includes('旧第二人格'), 'flippedTraits 的内容绝不进 prompt')
 
 console.log('\n— mergePersona：不在白名单里的键一律忽略 —')
 const sneaky = mergePersona({ evil: 'rm -rf /', __proto__: { polluted: true }, constructor: 'x' })
@@ -114,24 +119,16 @@ check(block.includes('硬性要求：'), '有硬性要求小节')
 check(!block.includes('礼貌模式'), '默认态不提「礼貌模式」')
 check(!block.includes('坏用户'), '默认态不提「坏用户」')
 
-console.log('\n— buildPersonaBlock：翻转态 —')
-const flipped = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true })
-check(flipped.includes('礼貌模式'), '翻转态用 flippedTraits')
-check(!flipped.includes(DEFAULT_PERSONA.traits[0]), '翻转态不再含默认狠话')
-check(!hasProperName(flipped), '翻转态同样不含专名')
 console.log('\n— buildPersonaBlock：坏用户态 —')
 const bad = buildPersonaBlock(DEFAULT_PERSONA, { mood: 'bad' })
 check(bad.includes('坏用户'), '坏用户态有标记')
 check(bad.includes('坏蛋用户'), '坏用户态给出退化台词')
 check(bad.includes(DEFAULT_PERSONA.traits[0]), '坏用户态仍保留基础人格段')
 
-console.log('\n— buildPersonaBlock：翻转 + 坏用户同时成立 —')
-const both = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true, mood: 'bad' })
-check(both.includes('礼貌模式') && both.includes('坏用户'), '两个状态可叠加')
-
-console.log('\n— buildPersonaBlock：自定义人格无 flippedTraits 时回退 —')
-const noFlip = { ...DEFAULT_PERSONA, flippedTraits: undefined }
-check(buildPersonaBlock(noFlip, { flipped: true }).includes(DEFAULT_PERSONA.traits[0]), 'flippedTraits 缺失时回退到 traits，不崩')
+console.log('\n— buildPersonaBlock：传 flipped 也不改变任何东西（机制已删）—')
+const withFlipFlag = buildPersonaBlock(DEFAULT_PERSONA, { flipped: true })
+check(withFlipFlag === block, '传 flipped:true 与默认态输出逐字相同')
+check(!withFlipFlag.includes('礼貌模式'), '没有第二人格可以切过去')
 
 console.log('\n— buildPersonaBlock：入参缺失也不崩 —')
 for (const arg of [undefined, null, {}, { traits: [] }]) {
@@ -147,11 +144,10 @@ check(wrapped.includes('冷笑话专场'), '标题进了开场白')
 check(wrapped.includes('以下是本次要做的事'), '有任务分隔标记')
 check(wrapped.indexOf('说话方式：') < wrapped.indexOf(TASK), '人格段在任务之前')
 check(!hasProperName(wrapped), '开场白不含专名')
-console.log('\n— wrapWithPersona：翻转态开场白换腔调 —')
+console.log('\n— wrapWithPersona：传 flipped 也不换腔调（机制已删）—')
 const wrappedFlipped = wrapWithPersona(DEFAULT_PERSONA, { title: '冷笑话专场', body: TASK, state: { flipped: true } })
-check(wrappedFlipped.includes(TASK), '翻转态同样逐字保留任务正文')
-check(wrappedFlipped.includes('请稍候') || wrappedFlipped.includes('抱歉'), '翻转态开场白是礼貌腔')
-check(!wrappedFlipped.includes('你就坐着别动'), '翻转态不用默认腔的开场白')
+check(wrappedFlipped === wrapped, '传 flipped:true 与默认态输出逐字相同')
+check(wrappedFlipped.includes('你就坐着别动'), '开场白永远是同一句')
 
 console.log('\n— buildOutroRequest —')
 const outro = buildOutroRequest(DEFAULT_PERSONA, { title: 'x' })
@@ -164,7 +160,6 @@ check(!outroBad.includes('不要重新执行任务'), '坏用户态不再给正�
 console.log('\n— 端到端：所有产出都不含专名与编造内容 —')
 const allOutputs = [
   buildPersonaBlock(DEFAULT_PERSONA),
-  buildPersonaBlock(DEFAULT_PERSONA, { flipped: true }),
   buildPersonaBlock(DEFAULT_PERSONA, { mood: 'bad' }),
   wrapWithPersona(DEFAULT_PERSONA, { title: 't', body: 'b' }),
   buildOutroRequest(DEFAULT_PERSONA, { title: 't' }),

@@ -229,8 +229,8 @@ npm pack
 
 端到端探针（需要先起克隆 profile，流程见 `docs/探针流程.md`）：
 `probe-sound.mjs`、`probe-settings.mjs`、`probe-visual-ids.mjs`、
-`probe-persona.mjs`、`probe-flip.mjs`、`probe-flip-prompt.mjs`、
-`probe-local-path.mjs`、`probe-fortune.mjs`、`probe-dice-prompt.mjs`。
+`probe-persona.mjs`、`probe-local-path.mjs`、`probe-fortune.mjs`、
+`probe-dice-prompt.mjs`。
 
 调研笔记与语料候选文件归档在 `docs/research-notes/`（考据报告、语料来源、
 合并器的候选 JSON）。
