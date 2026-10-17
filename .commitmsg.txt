@@ -1,5 +1,0 @@
-Remove the personality flip, keep one talking system
-
-The "roll 50 times then permanently flip into a polite mode" mechanic is gone.
-It only ever added a second personality that made the character look like it
-had hidden lore, when what it should be is a single chatty system program.
