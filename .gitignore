@@ -5,6 +5,8 @@ package-lock.json
 npm-shrinkwrap.json
 
 # 调研资料（从 DSH 安装包里解出来的第三方源码，重新分发不合适）
+# 这个目录已经删了（42 MB，全是子代理解包产物）。
+# 手写的考据笔记与语料候选文件归档在 docs/research-notes/，那个是要提交的。
 research/
 
 # 本机专用的排查笔记（含绝对路径）

@@ -32,7 +32,8 @@
 **视觉类（弹窗 / 蓝屏）与「抽今日运气」完全不建会话、不调 AI、零 token、零延迟** ——
 点下去立刻有反应。剩下 6 个才会开新会话。
 
-「抽今日运气」的签文权重是刻意偏吉的：吉类合计 70%，平 25%，凶只有 5%；
+「抽今日运气」的签文权重是刻意偏吉的：**吉类合计 90%**（鸿运齐天 5% / 大吉 26% /
+中吉 33% / 小吉 26%），平 9.9%，凶只有 **0.1%**；
 而且**「凶」的正文是反着写的**（「从某种角度来说，你运气还挺好 —— 今天该踩的坑都提前踩完了」），
 抽到下签也能笑一下。这个插件是用来打发时间的，不是用来给人添堵的。
 
@@ -202,16 +203,23 @@ npm pack
 
 开发期工具（`tools/`，安装运行不依赖）：
 `host-smoke.mjs` 跑宿主侧回归（含音效路由与白名单）、
-`persona-check.mjs` 人格层单测（真 import，62 条）、
+`persona-check.mjs` 人格层单测（真 import）、
 `snap-check.mjs` 吸附纯函数（从 `client.js` 抽源码跑，不会与实现漂移）、
 `config-check.mjs` 配置读取（含 BOM 坑）、
 `local-check.mjs` 本地语料库与分流、
 `verify-sounds.mjs` 音效文件 ↔ 客户端清单 ↔ 宿主白名单三方一致性、
-`list-events.mjs` 打印事件清单与概率。
+`list-events.mjs` 打印事件清单与概率、
+`merge-trivia.mjs` / `merge-jokes.mjs` 语料合并器（`--check` 只体检不写盘）、
+`build-corpus-overview.mjs` 重新生成 `lib/语料库总览.md`（`--check` 校验是否过期）、
+`build-sounds.mjs` 把原版音效取到 `lib/sounds/`。
 
 端到端探针（需要先起克隆 profile，流程见 `docs/探针流程.md`）：
 `probe-sound.mjs`、`probe-settings.mjs`、`probe-visual-ids.mjs`、
-`probe-persona.mjs`、`probe-flip.mjs`、`probe-flip-prompt.mjs`。
+`probe-persona.mjs`、`probe-flip.mjs`、`probe-flip-prompt.mjs`、
+`probe-local-path.mjs`、`probe-fortune.mjs`。
+
+调研笔记与语料候选文件归档在 `docs/research-notes/`（考据报告、语料来源、
+合并器的候选 JSON）。
 
 ## 已知边界
 

@@ -1,0 +1,12 @@
+Lower the bad-luck odds and trim the research scaffolding
+
+Fortune draw is now heavily skewed toward good news: auspicious tiers 90%,
+neutral 9.9%, and "bad" down from 5% to 0.1%. The total was rescaled from
+100 to 1000 so 0.1% can be expressed as an integer weight, avoiding float
+drift in the cumulative-subtraction draw.
+
+Deleted research/ (42 MB of third-party source extracted from the DSH
+installation by subagents) plus 23 one-off scripts whose job is done.
+The hand-written material inside -- the persona provenance notes, the
+corpus source lists, and the merger candidate files -- is preserved under
+docs/research-notes/ so the mergers can still identify their inputs.

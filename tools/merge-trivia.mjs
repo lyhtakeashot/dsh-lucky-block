@@ -3,8 +3,8 @@
  *
  * 数据来源：
  *   · 旧库 435 条（原始权威）
- *   · research/trivia-batch-a.json  185 条（科学/人体/动物）
- *   · research/trivia-batch-b.json  200 条（历史/地理/语言/日常）
+ *   · docs/research-notes/trivia-batch-a.json  185 条（科学/人体/动物）
+ *   · docs/research-notes/trivia-batch-b.json  200 条（历史/地理/语言/日常）
  *
  * 与 tools/merge-jokes.mjs 同构，但冷知识有几条额外校验：
  *   · `topic` 必须落在固定词表内（拼错一个 topic 会在客户端分组时静默消失）
@@ -13,9 +13,9 @@
  *     而是打出来让人看：很多禁令词的合法语境是「辟谣」，那种必须放行。
  *
  * 设计原则：
- *   1. **运行库是唯一事实来源**。候选文件合并后**保留**在 research/ 里，
- *      但注意：本脚本会按 `research/trivia-candidates.mjs` 的同名旧路数覆盖
- *      运行库内容 —— 所以**不要**再跑 research/ 下的旧生成器，那会把库回退。
+ *   1. **运行库是唯一事实来源**。候选文件合并后**保留**在 docs/research-notes/ 里，
+ *      但注意：本脚本会按同名旧路数覆盖运行库内容 ——
+ *      所以**不要**再去跑别的生成器，那会把库回退。
  *   2. 去重按 text 精确比对。
  *   3. UTF-8 无 BOM 写出并回读验证。
  *
@@ -92,10 +92,25 @@ const seen = new Set(old.map((x) => x.text))
 const merged = [...old]
 
 /* ---------- 合并候选 ---------- */
+/* 候选文件已归档到 docs/research-notes/（原先在 research/，那个目录是
+   子代理从 DSH 安装包里解出来的第三方源码，42 MB，已经删掉）。
+   这里两个位置都找，谁先命中用谁，这样老的笔记目录结构也还能跑。 */
+const CANDIDATE_DIRS = [
+  path.join(root, 'docs', 'research-notes'),
+  path.join(root, 'research'),
+]
+function candidatePath(name) {
+  for (const dir of CANDIDATE_DIRS) {
+    const file = path.join(dir, name)
+    if (existsSync(file)) return file
+  }
+  return null
+}
+
 const CANDIDATES = ['trivia-batch-a.json', 'trivia-batch-b.json']
 for (const name of CANDIDATES) {
-  const file = path.join(root, 'research', name)
-  if (!existsSync(file)) {
+  const file = candidatePath(name)
+  if (!file) {
     console.log(`  跳过（不存在）: ${name}`)
     continue
   }

@@ -137,8 +137,8 @@ if (hit) {
   check(text?.includes('仅供参考'), 'localText 带「仅供参考」')
 
   // 「凶」必须反着写，不能是诅咒。
-  // 注意：**不能只在「本次刚好抽到凶」时才断言** —— 凶只有 5%，
-  // 靠掷骰子撞到它来验证，等于这条断言绝大多数时候根本没跑。
+  // 注意：**不能只在「本次刚好抽到凶」时才断言** —— 凶只有 0.1%，
+  // 靠掷骰子撞到它来验证，等于这条断言永远没跑过。
   // 所以下面无条件地从源码里把「凶」那一档取出来单独检查。
   if (name === '凶') {
     check(text.includes('你运气还挺好'), '「凶」的正文反着写成「你运气还挺好」')
@@ -182,17 +182,33 @@ if (arrStart > 0 && fnStart > 0) {
   for (const [k, v] of Object.entries(tally)) pct[k] = (v / N) * 100
   console.log('      档位分布:', Object.entries(pct).map(([k, v]) => `${k} ${v.toFixed(1)}%`).join(' / '))
 
-  check(Object.keys(tally).length === FORTUNE_NAMES.length, '六档都能抽到', `实测 ${Object.keys(tally).length} 档`)
+  /* 「六档都能抽到」这条断言在「凶」被压到 0.1% 之后就不成立了 ——
+     20 万次里期望只有 200 次，虽然大概率仍能抽到，但它不再是稳定断言。
+     改成直接检查每一档的 weight 都 > 0（这才是「抽得到」的真实条件），
+     而分布是否合理交给下面的百分比断言。 */
+  const fortunes = new Function(`${src.slice(arrStart, arrEnd)}\nreturn FORTUNES`)()
+  check(fortunes.length === FORTUNE_NAMES.length, '档位数正确', `${fortunes.length} 档`)
+  check(fortunes.every((f) => f.weight > 0), '每一档的权重都 > 0（都抽得到）')
 
   const luckyPct = ['鸿运齐天', '大吉', '中吉', '小吉'].reduce((s, k) => s + (pct[k] || 0), 0)
-  check(luckyPct > 60, '吉类合计明显偏高（不给人添堵）', `吉类 ${luckyPct.toFixed(1)}%`)
+  check(luckyPct > 85, '吉类合计 ≥ 85%（不给人添堵）', `吉类 ${luckyPct.toFixed(1)}%`)
 
+  /* 「凶」的目标是 ~0.1%。抽样估计的误差必须容得下：
+     p=0.001、N=200000 → 期望 200 次，标准差约 14 次，即 ±0.007 个百分点。
+     所以给一个宽松但有意义的上限 0.3%：真按 5% 实现的话这里必然失败。 */
   const badPct = pct['凶'] || 0
-  check(badPct > 0 && badPct < 10, '「凶」有但很少', `凶 ${badPct.toFixed(1)}%`)
+  check(badPct < 0.3, '「凶」被压到 0.1% 量级', `凶 ${badPct.toFixed(3)}%`)
 
-  /* 无条件检查「凶」的文案本身：靠掷骰子撞到 5% 的那一档来验证，
+  /* 「平」也要求明显低于吉类：用户说「平」的概率也太高了。 */
+  const flatPct = pct['平'] || 0
+  check(flatPct < 15, '「平」不超过 15%', `平 ${flatPct.toFixed(1)}%`)
+
+  /* 鸿运齐天用户明确说「不用调」，保持 5%。 */
+  const jackpotPct = pct['鸿运齐天'] || 0
+  check(Math.abs(jackpotPct - 5) < 1.5, '「鸿运齐天」保持约 5%', `鸿运齐天 ${jackpotPct.toFixed(1)}%`)
+
+  /* 无条件检查「凶」的文案本身：靠掷骰子撞到那一档来验证，
      等于这条断言绝大多数时候根本没跑（上一版就是这样，被静默跳过）。 */
-  const fortunes = new Function(`${src.slice(arrStart, arrEnd)}\nreturn FORTUNES`)()
   const bad = fortunes.find((f) => f.name === '凶')
   check(Boolean(bad), 'FORTUNES 里有「凶」这一档')
   if (bad) {

@@ -3,13 +3,13 @@
  *
  * 数据来源：
  *   · 旧库 170 条（其中「拆字式」12 条按用户决定删除）
- *   · research/jokes-absurd.json   65 条（荒谬逻辑）
- *   · research/jokes-literal.json  65 条（反向解读）
- *   · research/jokes-machine.json  65 条（机器视角）
+ *   · docs/research-notes/jokes-absurd.json   65 条（荒谬逻辑）
+ *   · docs/research-notes/jokes-literal.json  65 条（反向解读）
+ *   · docs/research-notes/jokes-machine.json  65 条（机器视角）
  *
  * 设计原则：
  *   1. **运行库是唯一事实来源**。这个脚本读完三个候选文件后**不删它们**，
- *      只是合并 —— 候选文件留在 research/ 里作为存档。
+ *      只是合并 —— 候选文件留在 docs/research-notes/ 里作为存档。
  *   2. 去重按 text 精确比对（新库三批之间已由子代理各自查重，这里再兜一次跨批重复）。
  *   3. 全部走 UTF-8 无 BOM 写出（Windows 上 PowerShell 的 Set-Content 会写 BOM，
  *      那会让 JSON.parse 直接抛，见 DESIGN.md 记过的坑）。
@@ -32,11 +32,24 @@ const checkOnly = process.argv.includes('--check')
 /** 用户明确要求删掉的类型：把成语/词逐字拆开反问，没有场景也没有洞察。 */
 const DROP_FORM = '拆字式'
 
-const CANDIDATES = [
-  path.join(root, 'research', 'jokes-absurd.json'),
-  path.join(root, 'research', 'jokes-literal.json'),
-  path.join(root, 'research', 'jokes-machine.json'),
+/* 候选文件已归档到 docs/research-notes/（原先在 research/，那个目录是
+   子代理从 DSH 安装包里解出来的第三方源码，42 MB，已经删掉）。
+   两个位置都找，谁先命中用谁。 */
+const CANDIDATE_DIRS = [
+  path.join(root, 'docs', 'research-notes'),
+  path.join(root, 'research'),
 ]
+function candidatePath(name) {
+  for (const dir of CANDIDATE_DIRS) {
+    const file = path.join(dir, name)
+    if (existsSync(file)) return file
+  }
+  return null
+}
+
+const CANDIDATES = ['jokes-absurd.json', 'jokes-literal.json', 'jokes-machine.json']
+  .map(candidatePath)
+  .filter(Boolean)
 
 /** 读一个 JSON 文件，兼容两种形状：裸数组，或 `{jokes, quips}` 对象。 */
 function load(file) {
