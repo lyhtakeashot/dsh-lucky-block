@@ -32,11 +32,12 @@ const pieces = [
   grab(/var SNAP_MS = \d+/, 'SNAP_MS'),
   grab(/function clamp\([\s\S]*?\n  \}/, 'clamp'),
   grab(/function snapGeometry\(next\) \{[\s\S]*?\n  \}/, 'snapGeometry'),
+  grab(/function anchorBelow\([\s\S]*?\n  \}/, 'anchorBelow'),
 ]
 
 // 提供一个可调的假视口。
 const fakeRoot = { innerWidth: 1280, innerHeight: 800 }
-const body = `${pieces.join('\n')}\nreturn { snapGeometry: snapGeometry, SNAP_THRESHOLD: SNAP_THRESHOLD, SNAP_MS: SNAP_MS }`
+const body = `${pieces.join('\n')}\nreturn { snapGeometry: snapGeometry, anchorBelow: anchorBelow, SNAP_THRESHOLD: SNAP_THRESHOLD, SNAP_MS: SNAP_MS }`
 const factory = new Function('root', body)
 const api = factory(fakeRoot)
 
@@ -104,6 +105,38 @@ console.log('')
 console.log('— 小视口：maxX/maxY 为 0 时不出现负值 —')
 check('视口比方块还小', { x: 10, y: 10 }, { innerWidth: 40, innerHeight: 40 }, { x: 0, y: 0 })
 check('视口等于方块', { x: 10, y: 10 }, { innerWidth: SIZE, innerHeight: SIZE }, { x: 0, y: 0 })
+
+console.log('')
+console.log('— 右键菜单 / 设置面板的展开方向（anchorBelow）—')
+
+/* 面板固定在方块下方，横向自适应：
+   贴右边缘 → 向左展开（用 right 锚定），贴左边缘 → 向右展开（left = 方块 x）。 */
+function checkAnchor(name, geometry, panelWidth, viewport, expect) {
+  Object.assign(fakeRoot, viewport)
+  const got = api.anchorBelow(geometry, panelWidth)
+  const left = got.left === null ? null : got.left
+  const right = got.right === null ? null : got.right
+  const ok = left === expect.left && right === expect.right
+  if (ok) {
+    pass += 1
+    console.log(`  PASS  ${name}`)
+  } else {
+    fail += 1
+    console.log(`  FAIL  ${name}`)
+    console.log(`        期望 left=${expect.left} right=${expect.right}，实际 left=${left} right=${right}`)
+  }
+}
+
+const MENU_W = 160
+const PANEL_W = 300
+checkAnchor('方块贴右：菜单向左展开', { x: 1224, y: 700, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: null, right: 0 })
+checkAnchor('方块贴右：300px 面板也向左展开', { x: 1224, y: 700, size: SIZE }, PANEL_W, { innerWidth: W, innerHeight: H }, { left: null, right: 0 })
+checkAnchor('方块贴左：菜单向右展开', { x: 0, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: 0, right: null })
+checkAnchor('方块中间：向右展开', { x: 500, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: 500, right: null })
+checkAnchor('距右边界刚好够：向右展开', { x: 1000, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: 1000, right: null })
+checkAnchor('差一点就溢出：翻转向左', { x: 1130, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: null, right: W - 1186 })
+checkAnchor('小视口：向左展开也不出界', { x: 160, y: 300, size: SIZE }, PANEL_W, { innerWidth: 320, innerHeight: H }, { left: null, right: 320 - 8 - PANEL_W })
+checkAnchor('窄视口：被迫向右展开', { x: 0, y: 300, size: SIZE }, PANEL_W, { innerWidth: 200, innerHeight: H }, { left: 0, right: null })
 
 console.log('')
 console.log('— 视口缺失时回退到 1280x800，不抛错 —')
