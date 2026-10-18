@@ -198,8 +198,8 @@ if (first && second) {
   const secondName = second.localText?.match(/今日运气：(\S+)/)?.[1]
   check(firstName === secondName, '当天第二次抽到同一档签', `第一次「${firstName}」第二次「${secondName}」`)
   check(
-    second.localText?.includes('今天已经抽过了'),
-    '第二次抽提示「今天已经抽过了」',
+    second.localText?.includes('今天已经抽过了，明天再来吧'),
+    '第二次抽提示「今天已经抽过了，明天再来吧」',
     (second.localText || '').split('\n').filter((l) => l.includes('已经抽过')).join(' / '),
   )
   check(second.fortuneRepeated === true, '第二次抽带 fortuneRepeated 标记')
