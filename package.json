@@ -18,6 +18,8 @@
     "lib/jokes.js",
     "lib/jokes-data.json",
     "lib/trivia-data.json",
+    "lib/audio-tracks.json",
+    "lib/audio",
     "lib/sounds",
     "icon.png",
     "cordis.patch.yml",

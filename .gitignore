@@ -22,6 +22,22 @@ docs/.commitmsg.txt
 docs/.commit-msg.txt
 docs/commit-msg.txt
 docs/cm.txt
+.commitmsg.txt
+.commit-msg.txt
+commit-msg.txt
+cm.txt
+
+# 抓音频时的中间文件（B 站源文件 5 MB，不进仓库）
+docs/.nggyu-src.m4a
+docs/.loudest.txt
+docs/.audio-found.txt
+docs/.audio-url.txt
+docs/.bili-search.txt
+
+# 抓 B 站音频 / 找高潮的一次性工具（点前缀 = 不进 npm 包）
+tools/.fetch-bv.mjs
+tools/.loudest.mjs
+tools/.find-audio.mjs
 
 # 编辑器 / 系统
 .DS_Store

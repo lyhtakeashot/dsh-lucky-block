@@ -128,14 +128,29 @@ function checkAnchor(name, geometry, panelWidth, viewport, expect) {
 }
 
 const MENU_W = 160
-const PANEL_W = 300
+/* **从 client.js 读真值**，不在这里写死。上一版这里硬写 300，
+   面板后来改成 320，判据却还在按 300 算 —— 会漏掉真实的出界，
+   而测试一路绿灯。凡是判据用了某个常量，就必须从源码里抽它。 */
+const PANEL_W = Number(/var PANEL_WIDTH = (\d+)/.exec(source)?.[1])
+if (!Number.isFinite(PANEL_W) || PANEL_W <= 0) {
+  console.error('抽取失败：PANEL_WIDTH 不存在或不是正数')
+  process.exit(1)
+}
+checkAnchor(`方块贴右：${PANEL_W}px 面板也向左展开`, { x: 1224, y: 700, size: SIZE }, PANEL_W, { innerWidth: W, innerHeight: H }, { left: null, right: 0 })
 checkAnchor('方块贴右：菜单向左展开', { x: 1224, y: 700, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: null, right: 0 })
-checkAnchor('方块贴右：300px 面板也向左展开', { x: 1224, y: 700, size: SIZE }, PANEL_W, { innerWidth: W, innerHeight: H }, { left: null, right: 0 })
 checkAnchor('方块贴左：菜单向右展开', { x: 0, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: 0, right: null })
 checkAnchor('方块中间：向右展开', { x: 500, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: 500, right: null })
 checkAnchor('距右边界刚好够：向右展开', { x: 1000, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: 1000, right: null })
 checkAnchor('差一点就溢出：翻转向左', { x: 1130, y: 300, size: SIZE }, MENU_W, { innerWidth: W, innerHeight: H }, { left: null, right: W - 1186 })
-checkAnchor('小视口：向左展开也不出界', { x: 160, y: 300, size: SIZE }, PANEL_W, { innerWidth: 320, innerHeight: H }, { left: null, right: 320 - 8 - PANEL_W })
+/* 「视口刚好比方块+面板宽一点点」：翻转后必须被夹回左边缘，不出界。
+   视口宽度跟着 PANEL_W 走（而不是写死 320）—— 面板一加宽，
+   写死的视口就会把这条断言推去另一条分支，于是它测的就不再是要测的东西。 */
+const NARROW_VW = PANEL_W + 40
+checkAnchor('小视口：向左展开也不出界', { x: 160, y: 300, size: SIZE }, PANEL_W, { innerWidth: NARROW_VW, innerHeight: H }, { left: null, right: NARROW_VW - 8 - PANEL_W })
+/* 面板和视口一样宽：连向左展开都夹不出空间，只能整块贴左边缘。
+   这条分支在面板 300px 时永远进不来（视口很少窄于 332px），加宽到 320 之后
+   就可能真的发生，所以补上 —— 否则只能靠「面板跑到屏幕外面」来发现。 */
+checkAnchor('面板与视口同宽：贴左边缘', { x: 160, y: 300, size: SIZE }, PANEL_W, { innerWidth: PANEL_W, innerHeight: H }, { left: 0, right: null })
 checkAnchor('窄视口：被迫向右展开', { x: 0, y: 300, size: SIZE }, PANEL_W, { innerWidth: 200, innerHeight: H }, { left: 0, right: null })
 
 console.log('')

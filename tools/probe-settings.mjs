@@ -101,7 +101,26 @@ if (Array.isArray(before.events)) {
   check(byId.get('paper')?.trigger === 'hold', 'paper 标为长按', `trigger=${byId.get('paper')?.trigger}`)
   check(byId.get('trivia')?.trigger === 'click', 'trivia 标为单击', `trigger=${byId.get('trivia')?.trigger}`)
   check(!byId.has('mc-recipe'), '事件清单里没有 mc-recipe（已按用户要求删除）')
+  /* 面板的「恢复默认」要拿出厂权重作基准，所以 defaultWeight 必须每条都在。
+     缺了它面板上那个按钮就只能恢复到「当前值」= 什么都没恢复。 */
+  const missingDefault = before.events.filter((e) => typeof e.defaultWeight !== 'number')
+  check(missingDefault.length === 0, '每条事件都带 defaultWeight（面板「恢复默认」要用）',
+    JSON.stringify(missingDefault.map((e) => e.id)))
+  const badWeights = before.events.filter((e) => typeof e.weight !== 'number' || e.weight < 0)
+  check(badWeights.length === 0, '每条事件的覆盖后权重都是非负数', JSON.stringify(badWeights.map((e) => e.id)))
+  check(byId.has('audio'), '曲库非空时清单里有 audio 事件')
+  check(typeof before.eventOverrides === 'object' && before.eventOverrides !== null,
+    'settings() 返回 eventOverrides（面板要区分「出厂」与「用户改过」）')
 }
+
+// 自定义事件扩展点：文件不存在是正常状态，字段仍要存在让面板能显示路径。
+check(typeof before.customEventsPath === 'string' && before.customEventsPath.length > 0,
+  'settings() 返回 customEventsPath', String(before.customEventsPath))
+check(
+  before.customEvents && typeof before.customEvents === 'object' && Array.isArray(before.customEvents.events),
+  'settings() 返回 customEvents.events 数组',
+  `events=${before.customEvents?.events?.length} reason=${JSON.stringify(before.customEvents?.reason)}`,
+)
 
 // 关掉，读回必须是 false
 const off = await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({ sound: false }))
@@ -133,6 +152,68 @@ check(bad.status === 200, '非法 sound 值不 500', `status=${bad.status}`)
 const afterBad = await readSettings()
 check(typeof afterBad.sound === 'boolean', '非法值之后 sound 仍是布尔值', `sound=${JSON.stringify(afterBad.sound)}`)
 
+/* ---- 事件权重 / 开关覆盖层 ---- */
+// 先记住原值，跑完要还原（探针不该把用户的事件配置留在改过的状态）。
+const rawEvents = JSON.parse(JSON.stringify(before.eventOverrides ?? {}))
+
+// 写一条合法的：把 trivia 权重改成 6。
+const w = await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({
+  events: { trivia: { weight: 6 } },
+}))
+const wJson = JSON.parse(w.body)
+check(wJson.ok === true, 'save-settings {events} 成功', wJson.error ? wJson.error.message : '')
+check(wJson.value?.events?.trivia?.weight === 6, '宿主回显洗过的权重',
+  `value.events.trivia=${JSON.stringify(wJson.value?.events?.trivia)}`)
+const afterW = await readSettings()
+check(afterW.eventOverrides?.trivia?.weight === 6, '读回权重=6（真的落盘了）',
+  `eventOverrides=${JSON.stringify(afterW.eventOverrides)}`)
+const triviaRow = (afterW.events ?? []).find((e) => e.id === 'trivia')
+check(triviaRow?.weight === 6, '事件清单里的覆盖后权重跟着变（面板读的是这个）',
+  `weight=${triviaRow?.weight}`)
+check(triviaRow?.defaultWeight !== 6, 'defaultWeight 保持出厂值不被覆盖',
+  `defaultWeight=${triviaRow?.defaultWeight}`)
+
+// 写一条关掉的：weight 0 等价于 enabled:false。
+await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({
+  events: { joke: { weight: 0 } },
+}))
+const afterOff2 = await readSettings()
+check(afterOff2.eventOverrides?.joke?.weight === 0, 'weight 0 落盘（= 关掉这条事件）',
+  `eventOverrides.joke=${JSON.stringify(afterOff2.eventOverrides?.joke)}`)
+
+// 脏值必须被静默修正，而不是 500 或把配置写坏。
+const dirty = await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({
+  events: {
+    joke: { weight: 1e9, note: 'x', __proto__: { weight: 3 } },
+    Joke: { weight: 5 },
+    my_event: { weight: 5 },
+    nope_id: { weight: 5 },
+    trivia: { enabled: 'yes' },
+  },
+}))
+check(dirty.status === 200, '脏 events 值不 500', `status=${dirty.status}`)
+const afterDirty = await readSettings()
+const ov = afterDirty.eventOverrides ?? {}
+check(!('Joke' in ov), '大写 id 被丢掉', JSON.stringify(Object.keys(ov)))
+check(!('my_event' in ov), '下划线 id 被丢掉')
+check(!('enabled' in (ov.trivia ?? {})), '非布尔 enabled 被丢掉', JSON.stringify(ov.trivia))
+check(!('note' in (ov.joke ?? {})), '多余字段被丢掉', JSON.stringify(ov.joke))
+const jokeWeight = ov.joke?.weight
+check(typeof jokeWeight === 'number' && jokeWeight === 25, '超大权重夹到上限 25', `weight=${jokeWeight}`)
+// 关键：脏值不能让配置退化成「什么都不剩」或把 model/persona 抹掉。
+check(Object.keys(ov).length > 0, '脏值清洗后仍保留合法条目', JSON.stringify(Object.keys(ov)))
+check(typeof afterDirty.config === 'object' && afterDirty.config !== null,
+  '脏值写完后 config 仍可读（model/persona 没被抹掉）')
+
+// 还原。整份替换语义：写 {} 就等于「全部恢复默认」。
+await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({ events: rawEvents }))
+const afterRestore = await readSettings()
+check(
+  JSON.stringify(afterRestore.eventOverrides ?? {}) === JSON.stringify(rawEvents),
+  '跑完事件覆盖层还原成进来时的样子',
+  `原来 ${JSON.stringify(rawEvents)} → 现在 ${JSON.stringify(afterRestore.eventOverrides ?? {})}`,
+)
+
 console.log('')
 if (fail > 0) { console.log(`!!! ${fail} 项未通过`); process.exit(1) }
-console.log('ALL GREEN —— 设置面板的 sound 开关可读可写、且不破坏其它字段。')
+console.log('ALL GREEN —— 设置面板的 sound 开关、事件权重/开关覆盖层都可读可写，且不破坏其它字段。')
