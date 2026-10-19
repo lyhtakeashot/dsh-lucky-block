@@ -99,7 +99,7 @@ check(
 
 /* ---------- 2. 掷到 fortune 为止，断言不建会话 + 文本正确 ---------- */
 
-const FORTUNE_NAMES = ['鸿运齐天', '大吉', '中吉', '小吉', '平', '凶']
+const FORTUNE_NAMES = ['鸿运齐天', '大吉', '中吉', '小吉', '顺', '平', '凶']
 
 let hit = null
 let rolls = 0
@@ -107,7 +107,7 @@ const seenNames = new Set()
 
 while (rolls < 60 && !hit) {
   const before = listSessionIds()
-  /* trigger: 'click' —— fortune 在单击池，长按池里只有 paper/news/todo-shuffle。
+  /* trigger: 'click' —— fortune 在单击池，长按池里只有 paper/news/invent。
      不带这个字段的话默认走 hold，永远掷不到 fortune，循环结束后会误报「抽不到」。 */
   const res = await post('/dsh-lucky-block/roll', { trigger: 'click' })
   rolls += 1
@@ -178,7 +178,7 @@ try {
 let first = null
 let second = null
 for (let i = 0; i < 60 && !(first && second); i += 1) {
-  /* trigger: 'click' —— fortune 在单击池，长按池里只有 paper/news/todo-shuffle。 */
+  /* trigger: 'click' —— fortune 在单击池，长按池里只有 paper/news/invent。 */
   const res = await post('/dsh-lucky-block/roll', { trigger: 'click' })
   const value = res.data?.value
   if (!value || value.eventId !== 'fortune') continue
@@ -229,7 +229,7 @@ try {
   console.error(`  复位今日运气状态失败：${error?.message ?? error}`)
 }
 
-/* ---------- 3. 六档的权重分布（直接测抽取函数，不靠掷骰子碰运气）---------- */
+/* ---------- 3. 七档的权重分布（直接测抽取函数，不靠掷骰子碰运气）---------- */
 
 /* 这里刻意**不用**「多掷几次 roll 看抽到几档」来验证：
    fortune 在事件池里只占 12%，掷 40 次期望只有 ~4.8 次命中，
@@ -260,7 +260,7 @@ if (arrStart > 0 && fnStart > 0) {
   for (const [k, v] of Object.entries(tally)) pct[k] = (v / N) * 100
   console.log('      档位分布:', Object.entries(pct).map(([k, v]) => `${k} ${v.toFixed(1)}%`).join(' / '))
 
-  /* 「六档都能抽到」这条断言在「凶」被压到 0.1% 之后就不成立了 ——
+  /* 「七档都能抽到」这条断言在「凶」被压到 0.1% 之后就不成立了 ——
      20 万次里期望只有 200 次，虽然大概率仍能抽到，但它不再是稳定断言。
      改成直接检查每一档的 weight 都 > 0（这才是「抽得到」的真实条件），
      而分布是否合理交给下面的百分比断言。 */
@@ -268,8 +268,36 @@ if (arrStart > 0 && fnStart > 0) {
   check(fortunes.length === FORTUNE_NAMES.length, '档位数正确', `${fortunes.length} 档`)
   check(fortunes.every((f) => f.weight > 0), '每一档的权重都 > 0（都抽得到）')
 
-  const luckyPct = ['鸿运齐天', '大吉', '中吉', '小吉'].reduce((s, k) => s + (pct[k] || 0), 0)
-  check(luckyPct > 85, '吉类合计 ≥ 85%（不给人添堵）', `吉类 ${luckyPct.toFixed(1)}%`)
+  /* 「顺」是后插进来的一档，位置在「小吉」和「平」之间。
+     顺序本身是有含义的：数组顺序 = 从好到坏的排列，下面的吉类合计
+     也是靠「前四档」这个位置来判断的，所以顺序错了会连带算错。 */
+  check(
+    fortunes.map((f) => f.name).join('/') === FORTUNE_NAMES.join('/'),
+    '档位顺序是 鸿运齐天→大吉→中吉→小吉→顺→平→凶',
+    fortunes.map((f) => f.name).join(' / '),
+  )
+
+  const luckyPct = ['鸿运齐天', '大吉', '中吉', '小吉', '顺'].reduce((s, k) => s + (pct[k] || 0), 0)
+  check(luckyPct > 85, '吉类（含「顺」）合计 ≥ 85%（不给人添堵）', `吉类 ${luckyPct.toFixed(1)}%`)
+
+  /* 「顺」夹在「小吉」和「平」之间，这既是位置要求也是概率要求：
+     它应该比「小吉」少见，但比「平」常见。断两边的相对大小，
+     不断绝对值 —— 绝对值将来调整权重时会变，大小关系才是设计意图。
+     注意这里直接取 pct['平']，「平」的百分比变量在本段之后才声明。 */
+  const shunPct = pct['顺'] || 0
+  const smallPct = pct['小吉'] || 0
+  const flatRawPct = pct['平'] || 0
+  check(shunPct < smallPct, '「顺」比「小吉」少见', `顺 ${shunPct.toFixed(1)}% < 小吉 ${smallPct.toFixed(1)}%`)
+  check(shunPct > flatRawPct, '「顺」比「平」常见', `顺 ${shunPct.toFixed(1)}% > 平 ${flatRawPct.toFixed(1)}%`)
+
+  /* 「顺」的正文不能是「顺利」「一帆风顺」这类「事情成了」的写法 ——
+     它描述的是「没有障碍」，不是「有好事发生」，否则和小吉就没区别了。 */
+  const shun = fortunes.find((f) => f.name === '顺')
+  check(Boolean(shun), 'FORTUNES 里有「顺」这一档')
+  if (shun) {
+    check(shun.text.includes('坎'), '「顺」的文案讲的是「没有坎」而不是「有好事」', shun.text.slice(0, 20) + '…')
+    check(!/成功|办成|顺利|惊喜/.test(shun.text), '「顺」的文案没有滑进「小吉」的语义')
+  }
 
   /* 「凶」的目标是 ~0.1%。抽样估计的误差必须容得下：
      p=0.001、N=200000 → 期望 200 次，标准差约 14 次，即 ±0.007 个百分点。

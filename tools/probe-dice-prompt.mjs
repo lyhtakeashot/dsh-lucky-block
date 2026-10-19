@@ -114,14 +114,16 @@ const DONE_MARKERS = {
   trivia: /冷知识|知识点|·|关于|说的是|其实|因为|所以/,
   joke: /笑点|笑话|包袱|段子|梗/,
   news: /新闻|来源|http|报道/i,
-  'todo-shuffle': /文件|待办|紧急|修改|最近/,
+  /* 待办整理事件已换成「随机发明一个东西」（用户 m15360 第 7 条：整理待办没必要）。
+     标记跟着换 —— 事件 id 改了还留着旧 key 的话，它永远匹配不上，等于白写。 */
+  invent: /发明|名字|副作用|解决|装置|工具|叫/,
 }
 
 let hit = null
 let rolls = 0
 while (rolls < 40 && !hit) {
   const before = listSessionIds()
-  /* trigger: 'hold' —— 只有长按池（paper/news/todo-shuffle）会建会话。
+  /* trigger: 'hold' —— 只有长按池（paper/news/invent）会建会话。
      用默认值也行（默认就是 hold），但显式写出来是为了让「这个探针测的是长按池」
      这件事在代码里可见。 */
   const res = await post('/dsh-lucky-block/roll', { trigger: 'hold' })

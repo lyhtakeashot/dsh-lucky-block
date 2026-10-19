@@ -157,7 +157,7 @@ const holdValue = holdJson && holdJson.value
 check(Boolean(holdValue), '长按 roll 返回了 value', hold.body.slice(0, 200))
 if (holdValue) {
   check(
-    ['paper', 'news', 'todo-shuffle'].includes(holdValue.eventId),
+    ['paper', 'news', 'invent'].includes(holdValue.eventId),
     `长按抽到的是 AI 事件（实际 ${holdValue.eventId}）`,
   )
   check(

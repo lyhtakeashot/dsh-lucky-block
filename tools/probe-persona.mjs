@@ -180,7 +180,7 @@ if (rv) {
       trivia: '本轮题目',
       joke: '随机冷笑话任务',
       news: '做一期「时事新闻速览」',
-      'todo-shuffle': '列出当前工作区最近修改的 5 个文件',
+      invent: '随机发明一样东西',
     }
     const marker = TASK_MARKERS[rv.eventId]
     if (marker === undefined) {

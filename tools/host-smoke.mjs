@@ -196,7 +196,7 @@ for (const e of evs) {
   }
 }
 /* 具体归属：这些事件必须各自在对的池子里，否则用户的手感就变了。 */
-for (const id of ['paper', 'news', 'todo-shuffle']) {
+for (const id of ['paper', 'news', 'invent']) {
   if (!holdIds.includes(id)) {
     console.error(`FAIL  ${id} 应在长按池（它要调 AI）`)
     visualFail += 1

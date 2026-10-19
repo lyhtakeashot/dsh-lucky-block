@@ -28,9 +28,8 @@ commit-msg.txt
 cm.txt
 
 # 抓音频时的中间文件（B 站源文件几十 MB，不进仓库）
-docs/.nggyu-src.m4a
-docs/.stay-house-src.m4a
-docs/.myshot-src.m4a
+# 用通配符而不是逐个列：每次换歌都会多出几个，列漏了就会把 20 MB 的 m4a 提交进去
+docs/.*-src.m4a
 docs/.loudest.txt
 docs/.loud-house.txt
 docs/.loud-myshot.txt

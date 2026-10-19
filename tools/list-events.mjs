@@ -23,11 +23,14 @@ const src = readFileSync(path.resolve(here, '..', 'lib', 'index.js'), 'utf8')
 
 /* 音频事件按曲目展开（`...audioEvents(audioTracks)`），静态解析看不见它们 ——
    展开发生在运行期，源文件里只有一句 spread。所以这里照抄一份同样的展开规则：
-   文件名去扩展名、转小写、加 `audio-` 前缀，权重固定 1、trigger 固定 click。
+   文件名去扩展名、转小写、加 `audio-` 前缀，权重取条目上的 `weight`（缺省 1）、
+   trigger 固定 click。
 
    判据必须与 lib/index.js 的 audioEvents() **逐字一致**，否则工具打印的清单
    会和运行期对不上：那个函数里不合规的文件名会被 isSafeEventId 挡掉，
    这里也要挡（`.toLowerCase()` 之后仍要过同一个白名单）。 */
+const DEFAULT_AUDIO_WEIGHT = 1
+
 function audioTracks() {
   let raw = null
   try {
@@ -116,7 +119,7 @@ for (const track of audioTracks()) {
   rows.push({
     id,
     title: typeof track.title === 'string' && track.title.trim().length > 0 ? track.title.trim() : track.file,
-    weight: 1,
+    weight: Number.isFinite(track.weight) && track.weight > 0 ? track.weight : DEFAULT_AUDIO_WEIGHT,
     kind: 'local',
     trigger: 'click',
   })

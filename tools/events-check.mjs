@@ -129,13 +129,13 @@ check('注入用的 key 原样留下（读取侧按 id 查，无副作用）', a
   constructor: { weight: 3 },
 }), { constructor: { weight: 3 } })
 check('大小写 / 下划线不合规丢掉', api.eventOverrideSafe({ Joke: { weight: 3 }, my_event: { weight: 3 } }), {})
-check('横杠合法', api.eventOverrideSafe({ 'todo-shuffle': { weight: 3 } }), { 'todo-shuffle': { weight: 3 } })
+check('横杠合法', api.eventOverrideSafe({ 'make-a-thing': { weight: 3 } }), { 'make-a-thing': { weight: 3 } })
 check('尾部多余字段忽略', api.eventOverrideSafe({ joke: { weight: 2, note: 'x' } }), { joke: { weight: 2 } })
 
 console.log('')
 console.log('— isSafeEventId —')
 check('joke 合法', api.isSafeEventId('joke'), true)
-check('todo-shuffle 合法', api.isSafeEventId('todo-shuffle'), true)
+check('make-a-thing 合法', api.isSafeEventId('make-a-thing'), true)
 check('空串不合法', api.isSafeEventId(''), false)
 check('非字符串不合法', api.isSafeEventId(42), false)
 check('超长不合法', api.isSafeEventId('a'.repeat(49)), false)

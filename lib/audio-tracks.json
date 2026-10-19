@@ -1,5 +1,7 @@
 [
-  { "file": "never-give-you-up.ogg", "title": "Never Gonna Give You Up（副歌 42 秒）" },
-  { "file": "stay-at-your-house.ogg", "title": "I Really Want to Stay at Your House（37 秒）" },
-  { "file": "my-shot-satisfied.ogg", "title": "My Shot × Satisfied（54 秒）" }
+  { "file": "never-give-you-up.ogg", "title": "Never Gonna Give You Up", "weight": 2 },
+  { "file": "whos-ready-for-tomorrow.ogg", "title": "Who's Ready for Tomorrow" },
+  { "file": "stay-at-your-house.ogg", "title": "I Really Want to Stay at Your House" },
+  { "file": "my-shot.ogg", "title": "My Shot" },
+  { "file": "satisfied.ogg", "title": "Satisfied" }
 ]
