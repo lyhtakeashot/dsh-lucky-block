@@ -108,7 +108,10 @@ if (Array.isArray(before.events)) {
     JSON.stringify(missingDefault.map((e) => e.id)))
   const badWeights = before.events.filter((e) => typeof e.weight !== 'number' || e.weight < 0)
   check(badWeights.length === 0, '每条事件的覆盖后权重都是非负数', JSON.stringify(badWeights.map((e) => e.id)))
-  check(byId.has('audio'), '曲库非空时清单里有 audio 事件')
+  /* 音频是一库一事件（`audio-<文件名>`），所以断言的是「至少有一条」，
+     不是「有一条叫 audio 的」—— 后者在按曲目拆分之后永远为假。 */
+  const audioIds = before.events.filter((e) => String(e.id).startsWith('audio-')).map((e) => e.id)
+  check(audioIds.length > 0, '曲库非空时清单里有 audio-* 事件', JSON.stringify(audioIds))
   check(typeof before.eventOverrides === 'object' && before.eventOverrides !== null,
     'settings() 返回 eventOverrides（面板要区分「出厂」与「用户改过」）')
 }

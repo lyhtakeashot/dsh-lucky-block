@@ -419,7 +419,7 @@ id / weight / title，打印概率表。文档与代码不会漂移。
 
 | 池 | 事件 | 代价 |
 | --- | --- | --- |
-| `click` | popups / bluescreen / fortune / trivia / joke / audio（清单非空时） | 零 token、零会话 |
+| `click` | popups / bluescreen / fortune / trivia / joke / `audio-<文件名>`（一首歌一条） | 零 token、零会话 |
 | `hold` | paper / news / todo-shuffle | 建会话、调模型 |
 
 `rollDice(trigger)` 先用 `trigger` 过滤事件再按权重抽，
@@ -696,24 +696,41 @@ Audio 元素（播完自己摘出池子），页面切到后台自动静音。**
 
 分两个池而不是「一个池 + 运行时过滤」，是为了让**两边的权重独立**：
 如果只有一个池，往单击池加十条音频就会把长按事件的命中率一起稀释。
-现在单击池权重 16（含音频 2）、长按池权重 8，互不干扰。
+现在单击池权重 17（含三首歌各 1）、长按池权重 8，互不干扰。
 
 （`/roll` 不传 `trigger` 时默认 `'hold'`，因为「长按」是这个按钮原本的语义。）
 
-### 14.3 音频事件
+### 14.3 音频事件：一首歌一条
 
-清单先到了《Never Gonna Give You Up》副歌 42 秒试水，所以骨架已经填上第一首歌：
+包里带三首：`never-give-you-up.ogg`（42 秒副歌）、`stay-at-your-house.ogg`（37 秒）、
+`my-shot-satisfied.ogg`（54 秒）。
 
-- `lib/audio-tracks.json` 现在有 1 条；数组为空时 `buildEvents()` 末尾把 `audio`
-  事件**从清单里摘掉**（权重 0、不参与抽取）。
+- `lib/audio-tracks.json` 是清单；**一首歌展开成一条事件**（`audioEvents(tracks)`），
+  不是「随机放一段音频」的大事件。
+- 事件 id 由文件名派生：`stay-at-your-house.ogg` → `audio-stay-at-your-house`。
 - 填 `[{"file": "xxx.ogg", "title": "显示名"}]` + 文件丢进 `lib/audio/`，事件自动出现。
 - 文件名白名单 `/^[A-Za-z0-9_-]+\.(ogg|mp3)$/` —— 防目录穿越。
 - 宿主新增 `/dsh-lucky-block/audio/<file>` 路由（和 `/sound/` 同一套写法）。
 
-**清单为空时事件必须彻底消失**，而不是「抽到了但播不了」——
-后者的表现是用户点了没反应，比不列出来更糟。
+**清单一首都没有时不该留下一个空事件**：`audioEvents()` 返回空数组，整类事件
+压根不存在，而不是「抽到了但播不了」—— 后者的表现是用户点了没反应，比不列出来更糟。
 
-#### 14.3.1 为什么「打进插件包」而不是联网
+#### 14.3.1 为什么按曲目拆开，而不是一条「随机放音频」
+
+用户要能**单独关掉某一首**（听腻了那首、或者某一首不想在办公室放）。
+覆盖层是按事件 id 生效的，所以合成一条「随机放一段音频」的话，
+勾掉它等于三首一起没了 —— 那正好把「可自定义」变成「全有或全无」。
+
+用**文件名**而不是曲名派生 id，因为 id 要进 `config.json` 的 `events` 覆盖层，
+还得过 `isSafeEventId` 的 `/^[a-z][a-z0-9-]*$/`（曲名里有中文、空格、冒号，过不了）。
+顺带的好处：改了 `title` 不会让覆盖配置悄悄失效。
+
+每首歌权重固定 **1** 而不是照抄原来的 3：曲目数会随加歌增长，
+权重写 3 的话加到十首就吃掉单击池一半的概率，冷知识和冷笑话会被挤到边角。
+
+代价是设置面板会多几行。这是刻意的 —— 面板本来就要能看出「哪条事件关着」。
+
+#### 14.3.2 为什么「打进插件包」而不是联网
 
 音乐随 npm 包发布：
 
@@ -721,16 +738,19 @@ Audio 元素（播完自己摘出池子），页面切到后台自动静音。**
 - 没有「这个 CDN 挂了 / 版权方下架了」这种不可控因素；
 - 只有一个请求，浏览器原生缓存。
 
-代价是包体积，所以**只放高潮段**：完整版三分钟会让「随手点一下」变成一次
-漫长的停留，也把包撑大四倍。现在的试水曲 42 秒 / 632 KB（Vorbis q4）。
+代价是包体积，所以**只放高潮段**：完整版三四分钟会让「随手点一下」变成一次
+漫长的停留，也把包撑大好几倍。现在三首共 2 MB（Vorbis q4，44.1kHz 立体声）。
 
-切法：`ffmpeg -i src -ss 100 -to 142 -c:a libvorbis -q:a 4 -ac 2 -ar 44100 out.ogg`。
+切法：`ffmpeg -i src -ss 58 -to 95 -c:a libvorbis -q:a 4 -ac 2 -ar 44100 out.ogg`。
 `-ss` 放在 `-i` **之后**是精确定位，放最前面是快速 seek（可能落在非关键帧上，
-听感上有轻微的啪声）。找高潮用的是自写的 RMS 分桶脚本（`tools/.loudest.mjs`），
-`ffmpeg -af astats=metadata=1:reset=N` 不行 —— `reset` 的单位是**采样数**不是秒，
-出来的窗口数和时长完全对不上。
+听感上有轻微的啪声）。找高潮用的是自写的 RMS 分桶脚本（`tools/.loudest.mjs`，
+`-i` 后接 2 秒窗口），`ffmpeg -af astats=metadata=1:reset=N` 不行 —— `reset` 的单位是
+**采样数**不是秒，出来的窗口数和时长完全对不上。
 
-#### 14.3.2 曲库有两份位置，用户目录优先
+`I Really Want to Stay at Your House` 取的是 58–95 秒：那是全曲唯一一段
+持续 -9dB 的副歌（其余段落都在 -15dB 上下，卷到 2 秒窗口里一眼能看出来）。
+
+#### 14.3.3 曲库有两份位置，用户目录优先
 
 `localAudioTracks()` 先读 `$DSH_HOME/plugins/dsh-lucky-block/audio-tracks.json`，
 读不到再退回随包的 `lib/audio-tracks.json`；`/dsh-lucky-block/audio/<file>`
@@ -797,7 +817,9 @@ Audio 元素（播完自己摘出池子），页面切到后台自动静音。**
 `buildEvents()` 的数据流刻意排成这个次序：
 
 1. **内置事件**（`buildEvents()` 前半）—— prompt 和 prepare 都在代码里写死；
-2. **摘掉语料为空的**（joke / trivia / audio）；
+   音频事件在这一步由 `audioEvents()` 按曲库展开成 N 条；
+2. **摘掉语料为空的**（joke / trivia）—— 音频不需要这一步，空曲库
+   `audioEvents()` 本来就返回空数组；
 3. **追加第三方事件**（`custom-events.json`）—— id 撞车时内置赢；
 4. **贴用户覆盖层**（`config.json` 的 `events`）。
 

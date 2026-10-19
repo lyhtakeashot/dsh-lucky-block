@@ -21,30 +21,32 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(path.resolve(here, '..', 'lib', 'index.js'), 'utf8')
 
-/* 曲库为空时运行期会把 audio 事件整条摘掉（见 buildEvents 末尾的 dropped 集合）。
-   工具必须跟着摘，否则 host-smoke 的「工具 vs 运行期」一致性检查会报
-   「解析到 9 个，运行期有 8 个」—— 而这不是 bug，是真实状态。
-   判据抄的是 localAudioTracks()：文件名白名单 + 必须是数组。 */
-function audioTrackCount() {
+/* 音频事件按曲目展开（`...audioEvents(audioTracks)`），静态解析看不见它们 ——
+   展开发生在运行期，源文件里只有一句 spread。所以这里照抄一份同样的展开规则：
+   文件名去扩展名、转小写、加 `audio-` 前缀，权重固定 1、trigger 固定 click。
+
+   判据必须与 lib/index.js 的 audioEvents() **逐字一致**，否则工具打印的清单
+   会和运行期对不上：那个函数里不合规的文件名会被 isSafeEventId 挡掉，
+   这里也要挡（`.toLowerCase()` 之后仍要过同一个白名单）。 */
+function audioTracks() {
   let raw = null
   try {
     raw = readFileSync(path.resolve(here, '..', 'lib', 'audio-tracks.json'), 'utf8')
   } catch {
-    return 0
+    return []
   }
   if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
   let parsed = null
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return 0
+    return []
   }
-  if (!Array.isArray(parsed)) return 0
+  if (!Array.isArray(parsed)) return []
   return parsed.filter(
     (item) => item && typeof item.file === 'string' && /^[A-Za-z0-9_-]+\.(ogg|mp3)$/.test(item.file),
-  ).length
+  )
 }
-const hasAudio = audioTrackCount() > 0
 
 // 只扫 buildEvents() 的函数体，避免误抓别处的 id/weight/title 组合。
 // 注意它现在是 `async function buildEvents()`，用 indexOf 找 `function buildEvents()`
@@ -89,8 +91,6 @@ for (const chunk of chunks) {
   const title = field(chunk, 'title', 'str')
   const weight = field(chunk, 'weight', 'num')
   if (!id || !title || weight === null) continue
-  /* 空曲库 = 运行期没有这条事件，这里也不列。 */
-  if (id === 'audio' && !hasAudio) continue
   rows.push({
     id,
     title,
@@ -106,6 +106,20 @@ for (const chunk of chunks) {
 if (rows.length === 0) {
   console.error('没有解析到任何事件，检查 buildEvents() 的结构是否变了')
   process.exit(1)
+}
+
+/* 静态解析拿不到 `...audioEvents()` 展开的那几条，在这里补上。 */
+for (const track of audioTracks()) {
+  const stem = track.file.replace(/\.(ogg|mp3)$/i, '')
+  const id = `audio-${stem}`.toLowerCase()
+  if (!/^[a-z][a-z0-9-]*$/.test(id) || id.length > 48) continue
+  rows.push({
+    id,
+    title: typeof track.title === 'string' && track.title.trim().length > 0 ? track.title.trim() : track.file,
+    weight: 1,
+    kind: 'local',
+    trigger: 'click',
+  })
 }
 
 const missingTrigger = rows.filter((r) => !r.trigger)
@@ -126,6 +140,10 @@ const POOL_LABEL = {
   hold: '长按挖满（调用 AI）',
 }
 
+/* 列宽跟着最长 id 走：音频事件的 id 是 `audio-<文件名>`，23 字符起步，
+   写死 14 会让它们在表格里顶出来把后面的列全挤歪。 */
+const ID_WIDTH = Math.max(14, ...rows.map((r) => r.id.length))
+
 for (const pool of ['click', 'hold']) {
   const items = rows.filter((r) => r.trigger === pool)
   if (items.length === 0) {
@@ -134,12 +152,12 @@ for (const pool of ['click', 'hold']) {
   }
   const poolTotal = items.reduce((sum, r) => sum + r.weight, 0)
   console.log(`\n【${POOL_LABEL[pool]}】${items.length} 个事件，权重合计 ${poolTotal}`)
-  console.log(`  ${'id'.padEnd(14)} ${'类型'.padEnd(6)} ${'权重'.padEnd(4)} ${'概率'.padEnd(7)} 说明`)
-  console.log('  ' + '-'.repeat(70))
+  console.log(`  ${'id'.padEnd(ID_WIDTH)} ${'类型'.padEnd(6)} ${'权重'.padEnd(4)} ${'概率'.padEnd(7)} 说明`)
+  console.log('  ' + '-'.repeat(ID_WIDTH + 56))
   for (const r of items) {
     const pct = ((r.weight / poolTotal) * 100).toFixed(1) + '%'
     console.log(
-      `  ${r.id.padEnd(14)} ${(KIND_LABEL[r.kind] ?? r.kind).padEnd(4)} ${String(r.weight).padEnd(4)} ${pct.padEnd(7)} ${r.title}`,
+      `  ${r.id.padEnd(ID_WIDTH)} ${(KIND_LABEL[r.kind] ?? r.kind).padEnd(4)} ${String(r.weight).padEnd(4)} ${pct.padEnd(7)} ${r.title}`,
     )
   }
 }

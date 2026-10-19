@@ -72,7 +72,7 @@ check(audioTrackCount > 0, '曲库非空（audio 事件才会参与抽取）', `
 /* 单击池共 6 条（弹窗/蓝屏/抽签/冷知识/冷笑话/音频），其中 5 条必然出本地内容。
    音频随清单非空才参与抽取 —— 所以这里「撞不撞得到」是**随机**的，不能当硬断言。
    真正要守住的是：万一撞到 audio，它的 `audio` 字段必须是可播放的文件名。 */
-const seen = { joke: 0, trivia: 0, fortune: 0, audio: 0 }
+const seen = { joke: 0, trivia: 0, fortune: 0 }
 const textIds = new Set()
 let sawJoke = false
 let sawTrivia = false
@@ -96,14 +96,15 @@ for (let i = 0; i < 60 && !(sawJoke && sawTrivia); i++) {
   const id = v.eventId
   if (id in seen) seen[id] += 1
   if (v.localText) textIds.add(id)
-  /* 音频事件随清单非空才参与抽取。撞不到是常态（曲库通常就那么几首），撞到了
-     才要验「给了可播放的文件、且标题非空」。所以「撞到 0 次」不能算 FAIL。 */
-  if (id === 'audio') {
+  /* 音频事件随清单非空才参与抽取，而且是**一库一事件**（id 形如 `audio-<文件名>`）。
+     撞不到是常态（曲库通常就那么几首），撞到了才要验「给了可播放的文件、且标题非空」。
+     所以「撞到 0 次」不能算 FAIL。 */
+  if (typeof id === 'string' && id.startsWith('audio-')) {
     audioInClick += 1
     const ok = Boolean(v.audio && typeof v.audio.file === 'string' && v.audio.file.length > 0)
       && Boolean(v.audio && typeof v.audio.title === 'string' && v.audio.title.length > 0)
     if (!ok) audioBad += 1
-    check(ok, 'audio 事件返回了可播放的文件信息',
+    check(ok, `${id} 返回了可播放的文件信息`,
       v.audio ? `${v.audio.title} → ${v.audio.file}` : '没有 audio 字段')
   }
 

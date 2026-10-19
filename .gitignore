@@ -27,17 +27,27 @@ docs/cm.txt
 commit-msg.txt
 cm.txt
 
-# 抓音频时的中间文件（B 站源文件 5 MB，不进仓库）
+# 抓音频时的中间文件（B 站源文件几十 MB，不进仓库）
 docs/.nggyu-src.m4a
+docs/.stay-house-src.m4a
+docs/.myshot-src.m4a
 docs/.loudest.txt
+docs/.loud-house.txt
+docs/.loud-myshot.txt
 docs/.audio-found.txt
 docs/.audio-url.txt
 docs/.bili-search.txt
+# 搜 BV 号、核验候选时落的中间文本（每次新建，别攒）
+docs/.c*.txt
+docs/.s*.txt
+docs/.pr.json
 
 # 抓 B 站音频 / 找高潮的一次性工具（点前缀 = 不进 npm 包）
 tools/.fetch-bv.mjs
 tools/.loudest.mjs
 tools/.find-audio.mjs
+tools/.check-bv.mjs
+tools/.search-bv.mjs
 
 # 编辑器 / 系统
 .DS_Store

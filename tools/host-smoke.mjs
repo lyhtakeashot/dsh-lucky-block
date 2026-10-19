@@ -487,11 +487,19 @@ if (!audioRoute) {
       audioCheck(false, 'lib/audio-tracks.json 可解析', error.message)
     }
     if (Array.isArray(tracks)) {
+      /* 音频事件是**一库一事件**（`...audioEvents(tracks)` 展开），
+         所以判据从「有没有一条叫 audio 的事件」变成「`audio-` 前缀的条数对不对」。
+         数对不上通常意味着源文件的 audioEvents() 和这里的展开规则漂移了。 */
+      const audioIds = evs.map((e) => e.id).filter((id) => id.startsWith('audio-'))
       if (tracks.length === 0) {
-        console.log('  曲库为空（清单还没给）→ audio 事件会被整条摘掉，这是正常状态')
-        audioCheck(!evs.some((e) => e.id === 'audio'), '空曲库时 audio 事件不在清单里')
+        console.log('  曲库为空 → 没有任何音频事件，这是正常状态')
+        audioCheck(audioIds.length === 0, '空曲库时没有 audio-* 事件')
       } else {
-        audioCheck(evs.some((e) => e.id === 'audio'), `曲库非空（${tracks.length} 条）时 audio 事件在清单里`)
+        audioCheck(
+          audioIds.length === tracks.length,
+          `曲库 ${tracks.length} 条时 audio-* 事件也是 ${tracks.length} 个`,
+          `实际 ${audioIds.length} 个：${JSON.stringify(audioIds)}`,
+        )
         const present = new Set(await readdir(fileURLToPath(new URL('../lib/audio/', import.meta.url))).catch(() => []))
         const missing = tracks.map((t) => t && t.file).filter((f) => typeof f === 'string' && !present.has(f))
         audioCheck(missing.length === 0, '曲库引用的文件都在 lib/audio/', `缺 ${JSON.stringify(missing)}`)
