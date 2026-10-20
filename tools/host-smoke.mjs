@@ -208,6 +208,47 @@ for (const id of ['popups', 'bluescreen', 'fortune']) {
     visualFail += 1
   }
 }
+
+/* 今日运气每档必须有五条签文，而且权重与条数互不影响。
+   这条断言放在这里是因为它守的是**数据结构**而不是抽取过程：
+   只要有人把 `texts` 摊平回 `text` + 重复条目，档位概率就会被文案条数
+   悄悄改变（给「凶」多写两条 = 凶从 0.1% 变 0.3%），而 probe-fortune
+   的分布断言不一定能立刻看出来 —— 它测的是最终百分比，看不出成因。
+   静态源码里能看到 texts 的字面量条数，所以在这里数成本最低。 */
+{
+  const src = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
+  const arrStart = src.indexOf('const FORTUNES = [')
+  const arrEnd = arrStart > 0 ? src.indexOf('\n]', arrStart) + 2 : 0
+  if (arrStart <= 0) {
+    console.error('FAIL  找不到 FORTUNES 数组')
+    visualFail += 1
+  } else {
+    const fortunes = new Function(`${src.slice(arrStart, arrEnd)}\nreturn FORTUNES`)()
+    const wantTexts = 5
+    for (const f of fortunes) {
+      if (!Array.isArray(f.texts)) {
+        console.error(`FAIL  签文档「${f.name}」没有 texts 数组（应每档五条文案）`)
+        visualFail += 1
+      } else if (f.texts.length !== wantTexts) {
+        console.error(`FAIL  签文档「${f.name}」有 ${f.texts.length} 条文案，应为 ${wantTexts}`)
+        visualFail += 1
+      }
+    }
+    /* 反向断言：不应再有任何一档用旧的单条 `text` 字段 ——
+       两套字段并存的话，`text` 会被静默忽略，改文案的人会以为改了没生效。 */
+    for (const f of fortunes) {
+      if (Object.hasOwn(f, 'text')) {
+        console.error(`FAIL  签文档「${f.name}」还留着旧的单条 text 字段（已改用 texts 数组）`)
+        visualFail += 1
+      }
+    }
+    const weightTotal = fortunes.reduce((s, f) => s + f.weight, 0)
+    if (weightTotal !== 1000) {
+      console.error(`FAIL  签文档位权重合计 ${weightTotal}，应为 1000（文案条数不该影响档位概率）`)
+      visualFail += 1
+    }
+  }
+}
 /* 冷知识 / 冷笑话必须走本地库、待在单击池。它们曾经有 AI 版本，
    现在删了 —— 这条断言防止有人把 prepare 里的 prompt 加回来。 */
 for (const id of ['trivia', 'joke']) {

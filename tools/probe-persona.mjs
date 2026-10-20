@@ -135,6 +135,28 @@ check(!!rv, '12 次内抽到了会建会话的事件', `实际第 ${attempts} �
 
 if (rv) {
   check(typeof rv.quip === 'string' && rv.quip.length > 0, 'roll 返回角色台词 quip', JSON.stringify(rv.quip))
+
+  /* ---------- 2b 先做：趁 turn/end 还没清掉登记，立刻取注入文本 ---------- */
+
+  /* 这里**必须先取、再等投影**，顺序反了就永远取不到。
+     turn/end 分支会 `dicePrompts.delete(sessionId)` —— 那是刻意的（否则用户
+     在这个会话里追问时，几百字的任务指令会一直挂在系统提示里）。所以这条
+     登记只在「agent 正在跑这一轮」期间存在；投影缓存要等整轮结束才落盘，
+     等它出现时登记早就没了，探针会拿到 known=[] 并且看起来像「没注入」。
+     上一版就是这么写的，第一次跑就 FAIL。 */
+  let iv = null
+  for (let i = 0; i < 20; i += 1) {
+    const injected = await api(`/dsh-lucky-block/dice-prompt?sessionId=${encodeURIComponent(rv.sessionId)}`)
+    if (injected.json?.value?.found === true) {
+      iv = injected.json.value
+      break
+    }
+    // 还没登记上就短暂等一下；roll 已经返回说明 set() 早于 promptSession()，通常是立刻有。
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  const promptText = typeof iv?.text === 'string' ? iv.text : null
+  check(!!iv, '宿主登记了这个骰子会话的注入内容（turn/end 之后会被清掉，所以立刻取）')
+
   // 等会话投影落盘（异步写，别用固定 sleep 赌）
   const target = `session-${rv.sessionId.replace(/^session-/, '')}.json`
   let userText = null
@@ -158,12 +180,6 @@ if (rv) {
   }
 
   /* ---------- 2b. 系统提示里才是真正的指令 ---------- */
-  const injected = await api(`/dsh-lucky-block/dice-prompt?sessionId=${encodeURIComponent(rv.sessionId)}`)
-  const iv = injected.json?.value
-  check(injected.status === 200 && iv?.found === true, '宿主登记了这个骰子会话的注入内容',
-    iv?.found ? '' : `known=${JSON.stringify(iv?.known ?? [])}`)
-  const promptText = typeof iv?.text === 'string' ? iv.text : null
-
   if (promptText) {
     // 人格标记
     check(promptText.includes('［角色设定'), '系统提示含人格段标题')

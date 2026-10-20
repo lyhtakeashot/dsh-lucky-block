@@ -101,6 +101,25 @@ check(
 
 const FORTUNE_NAMES = ['鸿运齐天', '大吉', '中吉', '小吉', '顺', '平', '凶']
 
+/* 用户要求每档五条签文。定义成常量而不是散落的字面量 5，
+   这样「够不够 5 条」和「改成 3 条时这里要一起改」都只有一处。 */
+const TEXTS_PER_TIER = 5
+
+/* 「凶」的五条文案必须「转个身」，不能是诅咒。判据是**口吻**而不是某一句话：
+   上一版钉死 `includes('你运气还挺好')`，五条一上就必然假失败。
+   两种转身方向都算数 ——
+     ① 把不顺重新框成省钱/省事（「坑都提前踩完了」「好消息是它只来一次」）
+     ② 指出已经到底、只会往上走（「接下来只会往上走」「躲不掉的东西也没那么重要」）
+     ③ 把「不做」说成一种运气（「什么都不做就不会做错」）
+   定义成常量是刻意的：这个正则在文件里被两处用到（本次抽到的签、以及
+   从源码里抠出来的全部五条），两处各写一份必然漂移 —— 事实上第一次实现
+   就漂移了，一处有「别躲|躲不掉」另一处没有，于是同一句话一处 PASS 一处 FAIL。 */
+const BAD_TONE_RE = /运气|走运|往上走|不会做错|没那么重要|别躲|躲不掉|好消息|只来一次|剩下的时间|只会/
+
+/* 真的诅咒用词。「不顺」不在里面 —— 承认今天不顺恰恰是签「真」的地方，
+   用户反感的是「你今天要倒霉」这种直接判死刑的写法。 */
+const CURSE_RE = /倒霉|厄运|不祥|灾/
+
 let hit = null
 let rolls = 0
 const seenNames = new Set()
@@ -148,12 +167,12 @@ if (hit) {
   // 「凶」必须反着写，不能是诅咒。
   // 注意：**不能只在「本次刚好抽到凶」时才断言** —— 凶只有 0.1%，
   // 靠掷骰子撞到它来验证，等于这条断言永远没跑过。
-  // 所以下面无条件地从源码里把「凶」那一档取出来单独检查。
+  // 所以下面无条件地从源码里把「凶」那一档的五条文案全检查一遍。
   if (name === '凶') {
-    check(text.includes('你运气还挺好'), '「凶」的正文反着写成「你运气还挺好」')
-    check(!/倒霉|厄运|不祥|灾/.test(text), '「凶」的正文没有真的诅咒用户')
+    check(BAD_TONE_RE.test(text), '「凶」的正文反着写成「也不是坏事」')
+    check(!CURSE_RE.test(text), '「凶」的正文没有真的诅咒用户')
   } else {
-    console.log(`  ----  本次抽到「${name}」，改从源码直接检查「凶」的文案`)
+    console.log(`  ----  本次抽到「${name}」，改从源码直接检查「凶」的五条文案`)
   }
 
   console.log('      --- localText 全文 ---')
@@ -240,10 +259,17 @@ const arrStart = src.indexOf('const FORTUNES = [')
 const arrEnd = src.indexOf('\n]', arrStart) + 2
 const fnStart = src.indexOf('function drawFortune(rand)')
 const fnEnd = src.indexOf('\n}', fnStart) + 2
+/* drawFortune 现在把「挑哪句话」交给 withText —— 抽取时必须连着带出来，
+   否则 new Function 里会报 withText is not defined，看起来像源码坏了。 */
+const wtStart = src.indexOf('function withText(fortune, rand)')
+const wtEnd = src.indexOf('\n}', wtStart) + 2
 check(arrStart > 0 && fnStart > 0, '能从 lib/index.js 抽出 FORTUNES 与 drawFortune')
+check(wtStart > 0, '能从 lib/index.js 抽出 withText')
 
-if (arrStart > 0 && fnStart > 0) {
-  const draw = new Function(`${src.slice(arrStart, arrEnd)}\n${src.slice(fnStart, fnEnd)}\nreturn drawFortune`)()
+if (arrStart > 0 && fnStart > 0 && wtStart > 0) {
+  const draw = new Function(
+    `${src.slice(arrStart, arrEnd)}\n${src.slice(fnStart, fnEnd)}\n${src.slice(wtStart, wtEnd)}\nreturn drawFortune`,
+  )()
   // 固定种子的 LCG：可复现，不依赖 Math.random
   let seed = 20261017
   const rand = () => {
@@ -290,13 +316,20 @@ if (arrStart > 0 && fnStart > 0) {
   check(shunPct < smallPct, '「顺」比「小吉」少见', `顺 ${shunPct.toFixed(1)}% < 小吉 ${smallPct.toFixed(1)}%`)
   check(shunPct > flatRawPct, '「顺」比「平」常见', `顺 ${shunPct.toFixed(1)}% > 平 ${flatRawPct.toFixed(1)}%`)
 
-  /* 「顺」的正文不能是「顺利」「一帆风顺」这类「事情成了」的写法 ——
-     它描述的是「没有障碍」，不是「有好事发生」，否则和小吉就没区别了。 */
+  /* 「顺」的文案不能是「顺利」「一帆风顺」这类「事情成了」的写法 ——
+     它描述的是「没有障碍」，不是「有好事发生」，否则和小吉就没区别了。
+     每档五条，逐条检查，不是只看第一条。 */
   const shun = fortunes.find((f) => f.name === '顺')
   check(Boolean(shun), 'FORTUNES 里有「顺」这一档')
   if (shun) {
-    check(shun.text.includes('坎'), '「顺」的文案讲的是「没有坎」而不是「有好事」', shun.text.slice(0, 20) + '…')
-    check(!/成功|办成|顺利|惊喜/.test(shun.text), '「顺」的文案没有滑进「小吉」的语义')
+    const shunTexts = shun.texts || []
+    check(shunTexts.length === TEXTS_PER_TIER, '「顺」正好五条文案', `${shunTexts.length} 条`)
+    const noObstacle = /坎|没.{0,4}拦|不卡|没.{0,4}挡|不会被打断|没.{0,4}操心|不需.{0,4}较劲/
+    const slipsIntoSmall = /成功|办成|顺利|惊喜|好消息|机会|运气好/
+    for (const [i, t] of shunTexts.entries()) {
+      check(noObstacle.test(t), `「顺」第 ${i + 1} 条讲的是「没有坎」而不是「有好事」`, t.slice(0, 24) + '…')
+      check(!slipsIntoSmall.test(t), `「顺」第 ${i + 1} 条没有滑进「小吉」的语义`, t.slice(0, 24) + '…')
+    }
   }
 
   /* 「凶」的目标是 ~0.1%。抽样估计的误差必须容得下：
@@ -313,17 +346,67 @@ if (arrStart > 0 && fnStart > 0) {
   const jackpotPct = pct['鸿运齐天'] || 0
   check(Math.abs(jackpotPct - 5) < 1.5, '「鸿运齐天」保持约 5%', `鸿运齐天 ${jackpotPct.toFixed(1)}%`)
 
-  /* 无条件检查「凶」的文案本身：靠掷骰子撞到那一档来验证，
+  /* ---------- 3b. 每档五条文案的结构断言 ---------- */
+
+  /* 用户明确要求「每种的签文都来 5 种」。这条断言必须逐档数，不能只看总数
+     —— 七档加起来 35 条、但某一档只有 3 条，用户照样会觉得被敷衍。 */
+  for (const f of fortunes) {
+    const n = Array.isArray(f.texts) ? f.texts.length : 0
+    check(n === TEXTS_PER_TIER, `「${f.name}」正好五条文案`, `${n} 条`)
+  }
+  check(
+    fortunes.every((f) => Array.isArray(f.texts) && f.texts.every((t) => typeof t === 'string' && t.trim().length > 0)),
+    '每档的每条文案都是非空字符串',
+  )
+  /* 同一档内不能有重复文案 —— 复制粘贴时最容易犯，而且看起来像「没写够」。 */
+  for (const f of fortunes) {
+    const list = f.texts || []
+    check(new Set(list).size === list.length, `「${f.name}」的五条文案互不重复`)
+  }
+  /* 跨档也不能重复：相同的一句话不可能既是「大吉」又是「中吉」。 */
+  const allTexts = fortunes.flatMap((f) => f.texts || [])
+  check(new Set(allTexts).size === allTexts.length, '全部签文没有跨档重复', `共 ${allTexts.length} 条`)
+
+  /* 权重与文案条数解耦：这是本次改动最容易踩的坑。
+     如果哪天有人把 texts 摊平进 FORTUNES，档位概率就会被条数改变 ——
+     给「凶」多写两条文案，凶就从 0.1% 变成 0.3%。 */
+  const expectedWeightTotal = 1000
+  check(
+    fortunes.reduce((s, f) => s + f.weight, 0) === expectedWeightTotal,
+    '档位权重合计仍是 1000（五条文案不改档位概率）',
+    fortunes.reduce((s, f) => s + f.weight, 0),
+  )
+
+  /* 每档内五条都应该真的抽得到：给 drawFortune 喂连续随机数，
+     收集该档出现的所有文案，必须覆盖全部五条。 */
+  const covered = {}
+  for (let i = 0; i < 5000; i += 1) {
+    const f = draw(rand)
+    covered[f.name] = covered[f.name] || new Set()
+    covered[f.name].add(f.text)
+  }
+  for (const f of fortunes) {
+    if (f.name === '凶') continue // 0.1%，5000 次里可能抽不到这一档
+    const got = covered[f.name]?.size ?? 0
+    check(got === (f.texts || []).length, `「${f.name}」的五条文案都抽得到`, `覆盖 ${got} 条`)
+  }
+
+  /* 无条件检查「凶」的五条文案本身：靠掷骰子撞到那一档来验证，
      等于这条断言绝大多数时候根本没跑（上一版就是这样，被静默跳过）。 */
   const bad = fortunes.find((f) => f.name === '凶')
   check(Boolean(bad), 'FORTUNES 里有「凶」这一档')
   if (bad) {
-    check(bad.text.includes('你运气还挺好'), '「凶」的文案反着写成「你运气还挺好」', bad.text.slice(0, 20) + '…')
-    check(!/倒霉|厄运|不祥|灾/.test(bad.text), '「凶」的文案没有真的诅咒用户')
+    /* 「凶」不能真的诅咒用户。反向检查的是「口吻」，不是某个固定短语——
+       上一版钉死「你运气还挺好」，换一条文案就假失败。
+       正则复用上面的 BAD_TONE_RE / CURSE_RE，两处各写一份必然漂移。 */
+    for (const [i, t] of (bad.texts || []).entries()) {
+      check(BAD_TONE_RE.test(t), `「凶」第 ${i + 1} 条反着写成「也不是坏事」`, t.slice(0, 24) + '…')
+      check(!CURSE_RE.test(t), `「凶」第 ${i + 1} 条没有真的诅咒用户`, t.slice(0, 24) + '…')
+    }
   }
   /* 免责声明必须由宿主拼接，而不是写在每条签文里 ——
      写进签文的话，将来新增一档忘了抄就漏了。 */
-  check(!fortunes.some((f) => f.text.includes('无科学依据')), '免责声明不写在签文里（由宿主统一追加）')
+  check(!fortunes.some((f) => (f.texts || []).some((t) => t.includes('无科学依据'))), '免责声明不写在签文里（由宿主统一追加）')
 }
 
 console.log('')
