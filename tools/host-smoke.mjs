@@ -274,6 +274,27 @@ if (evs.some((e) => e.id === 'mc-recipe')) {
   visualFail += 1
 }
 
+/* 插话（头顶气泡）不许用「冷知识。」开头。
+   它和 trivia 事件的正文是同一类内容，但出现位置完全不同：正文在屏幕正中
+   （一次一条、要你读完），插话贴在方块头顶（顺带一句、你可以不看）。
+   共用同一个开头词，用户会把插话当成「冷知识又跑错地方了」—— 用户 m18008
+   第 1 条就是这么误判的。这条断言守的是那个前缀，不是文风。 */
+{
+  const src = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
+  const chatterStart = src.indexOf('const CHATTER_LINES = [')
+  /* 收尾的 `]` 带缩进（这段在函数体内），不能按 `'\n]'` 找 —— 会一路找不到，
+     报成「找不到 CHATTER_LINES」，看起来像源码里没这个常量。 */
+  const rest = chatterStart < 0 ? '' : src.slice(chatterStart)
+  const closeMatch = rest === '' ? null : /^\s*\][ \t]*$/m.exec(rest)
+  if (chatterStart < 0 || closeMatch === null) {
+    console.error('FAIL  找不到 CHATTER_LINES')
+    visualFail += 1
+  } else if (/冷知识[。，]/.test(rest.slice(0, closeMatch.index))) {
+    console.error('FAIL  插话里还留着「冷知识。」开头，会被误认成冷知识事件')
+    visualFail += 1
+  }
+}
+
 if (visualFail > 0) process.exit(1)
 console.log('visual/local split + trigger pools: OK')
 
