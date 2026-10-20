@@ -20,6 +20,7 @@
     "lib/trivia-data.json",
     "lib/audio-tracks.json",
     "lib/audio",
+    "lib/lyrics",
     "lib/sounds",
     "icon.png",
     "cordis.patch.yml",

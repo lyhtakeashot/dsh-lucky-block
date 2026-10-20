@@ -118,5 +118,74 @@ if (tracksRaw !== null) {
   }
 }
 
+/* --- 4. 歌词时间轴 ---
+   只对做了歌词的歌检查（现在只有 never-give-you-up）。三个必须同时成立才算对：
+     1. 文件名与曲库里的 ogg 同名 —— 宿主按 `<文件名去掉后缀>.json` 去找，
+        名字对不上就静默变成「这首歌没歌词」，界面上看不出来；
+     2. `t` 严格递增且都落在片段时长内 —— 时间轴是**片段内**秒数，
+        拿原曲 LRC 直接喂进来会整首错位（那段副歌是从原曲 100 秒处剪的）；
+     3. 第一句不能晚于 5 秒 —— 晚了会出现「音乐在放、字幕半天不出来」。
+   时长从 ogg 的 Vorbis 头部读太麻烦，这里用登记的期望时长。 */
+const LYRICS = [
+  // 片段 42 秒（原曲 100~142 秒的副歌），见 README 的音频来源说明
+  { stem: 'never-give-you-up', seconds: 42 },
+]
+for (const entry of LYRICS) {
+  const file = path.join(root, 'lib', 'lyrics', `${entry.stem}.json`)
+  const raw = await readFile(file, 'utf8').catch(() => null)
+  check(`歌词 ${entry.stem}.json 存在`, raw !== null)
+  if (raw === null) continue
+  let lines = null
+  try {
+    const clean = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
+    lines = JSON.parse(clean)
+  } catch (error) {
+    check(`歌词 ${entry.stem}.json 可解析`, false, error.message)
+    continue
+  }
+  check(`歌词 ${entry.stem}.json 是数组`, Array.isArray(lines), typeof lines)
+  if (!Array.isArray(lines)) continue
+  check(`歌词 ${entry.stem} 非空`, lines.length > 0, `${lines.length} 行`)
+  check(
+    `歌词 ${entry.stem} 每行都是 {t, text}`,
+    lines.every((l) => l && Number.isFinite(l.t) && typeof l.text === 'string' && l.text.trim().length > 0),
+  )
+  check(`歌词 ${entry.stem} 的 t 从 0 开始不越界`, lines.every((l) => l.t >= 0 && l.t < entry.seconds), `片段 ${entry.seconds}s`)
+  let ascending = true
+  for (let i = 1; i < lines.length; i += 1) if (lines[i].t <= lines[i - 1].t) ascending = false
+  check(`歌词 ${entry.stem} 的 t 严格递增`, ascending)
+  check(`歌词 ${entry.stem} 第一句不晚于 5 秒`, lines.length > 0 && lines[0].t <= 5, `第一句 ${lines[0]?.t}s`)
+  /* 不检查「文本无重复」：副歌本来就会把同一句唱两遍，
+     这个断言会把一条正确的歌词文件判红。真正该管的是长度 ——
+     歌词条宽 `min(80vw, 760px)`、17px 字号，一行大约放得下 55~60 个
+     半角字符；超过了就会折成两行，而在底部它是从下往上顶的，
+     两行会盖住更多画面。 */
+  check(
+    `歌词 ${entry.stem} 每行不超过 60 字符`,
+    lines.every((l) => l.text.length <= 60),
+    `最长 ${Math.max(...lines.map((l) => l.text.length))}`,
+  )
+  check(
+    `歌词 ${entry.stem} 有对应的音频文件`,
+    (await readdir(path.join(root, 'lib', 'audio')).catch(() => [])).some((f) => f.replace(/\.(ogg|mp3)$/i, '') === entry.stem),
+  )
+}
+
+/* --- 5. 数据目录必须随包发布 ---
+   `package.json` 的 `files` 是一份白名单：没写进去的目录**不会**进 npm 包。
+   加 `lib/lyrics/` 时就是漏了这一条 —— 本地跑得好好的（源码目录里有文件），
+   装到别人机器上就变成「每首歌都没歌词」，而且不报错。
+   所以这里不逐个点名，而是扫 `lib/` 下所有**被运行时读取**的子目录，
+   与 `files` 清单对照。 */
+const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+const shipped = new Set(pkg.files ?? [])
+const dataDirs = (await readdir(path.join(root, 'lib'), { withFileTypes: true }))
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => `lib/${entry.name}`)
+check('files 清单非空', shipped.size > 0)
+for (const dir of dataDirs) {
+  check(`数据目录 ${dir}/ 随包发布`, shipped.has(dir), `package.json 的 files 里没有它`)
+}
+
 console.log(`\n${fail === 0 ? 'ALL GREEN' : 'FAILED'} pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)

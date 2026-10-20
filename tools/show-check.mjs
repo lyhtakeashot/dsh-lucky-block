@@ -128,7 +128,7 @@ checkTrue('蓝屏把收场函数传给了 runBluescreen', /runBluescreen\([\s\S]
 checkTrue('弹窗演出接了收场', /var popupsEnd = beginShow\(\)/.test(source))
 checkTrue('弹窗把收场函数传给了 runPopupShow', /runPopupShow\([\s\S]{0,200}popupsEnd/.test(source))
 checkTrue('音乐接了收场', /var musicEnd = beginShow\(\)/.test(source))
-checkTrue('音乐把收场函数传给了 playTrack', /playTrack\(value\.audio\.file, musicEnd\)/.test(source))
+checkTrue('音乐把收场函数传给了 playTrack', /playTrack\(value\.audio\.file, musicEnd[,)]/.test(source))
 checkTrue('没起音轨时立刻收场', /else musicEnd\(\)/.test(source))
 checkTrue('居中播报接了收场', /var textEnd = beginShow\(\)/.test(source))
 checkTrue('居中播报把收场函数传给了 broadcastText', /broadcastText\(value\.localText, 30000, textEnd\)/.test(source))
@@ -142,7 +142,10 @@ checkTrue(
 )
 checkTrue(
   '音乐被掐断也会报收场',
-  /function haltTrack\(\)[\s\S]{0,600}if \(done\) done\(\)/.test(source),
+  /* 窗口给到 1200 而不是刚好够：haltTrack 里是注释说明 + 摘 trackLyrics + 摘
+     trackEnd + pause + 从 voices 摘掉，四步之间随时可能再加一条注释。
+     窗口贴着实际长度写的话，下次谁加两行注释就会变成假红。 */
+  /function haltTrack\(\)[\s\S]{0,1200}if \(done\) done\(\)/.test(source),
 )
 checkTrue(
   '播报的定时到点会解锁',

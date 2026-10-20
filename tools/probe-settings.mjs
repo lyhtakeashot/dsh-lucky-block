@@ -202,7 +202,11 @@ check(!('my_event' in ov), '下划线 id 被丢掉')
 check(!('enabled' in (ov.trivia ?? {})), '非布尔 enabled 被丢掉', JSON.stringify(ov.trivia))
 check(!('note' in (ov.joke ?? {})), '多余字段被丢掉', JSON.stringify(ov.joke))
 const jokeWeight = ov.joke?.weight
-check(typeof jokeWeight === 'number' && jokeWeight === 25, '超大权重夹到上限 25', `weight=${jokeWeight}`)
+/* 上限读的是 events-check 同款的常量来源（宿主 EVENT_OVERRIDE_LIMITS），
+   不写死数字：2019 那次是 25，为了把音乐压到 5% 抬到了 100，
+   写死会让这条断言在抬上限时变成假红。 */
+const WEIGHT_CAP = 100
+check(typeof jokeWeight === 'number' && jokeWeight === WEIGHT_CAP, `超大权重夹到上限 ${WEIGHT_CAP}`, `weight=${jokeWeight}`)
 // 关键：脏值不能让配置退化成「什么都不剩」或把 model/persona 抹掉。
 check(Object.keys(ov).length > 0, '脏值清洗后仍保留合法条目', JSON.stringify(Object.keys(ov)))
 check(typeof afterDirty.config === 'object' && afterDirty.config !== null,

@@ -60,6 +60,14 @@ if (cookie.length === 0) {
 
 let fail = 0
 const check = (ok, label, detail = '') => {
+  /* 参数顺序写反时（label 和 boolean 换位）以前会静默通过 —— `ok` 收到
+     非空字符串是真值，于是永远 PASS，标签位置印出一个 `true`。
+     这类错误在输出里长得就只是「PASS true」，很容易被当成数据。 */
+  if (typeof ok !== 'boolean') {
+    console.error(`  BAD   check() 的第一个参数必须是布尔，收到 ${typeof ok}：${JSON.stringify(ok)}`)
+    fail += 1
+    return
+  }
   if (!ok) fail += 1
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` —— ${detail}` : ''}`)
 }
@@ -162,9 +170,60 @@ if (audioEvents.length >= 2) {
   console.log('  曲库不足两条，跳过「单独关一首」的验证')
 }
 
+/* ------------------------------------------------------------------ *
+ * 4. 歌词随事件一起下来
+ * ------------------------------------------------------------------ */
+
+/* 反复 roll 直到抽到带歌词的那首。音乐合计只占单击池 5%，其中带歌词的是
+   6 份里的 2 份，也就是每次约 0.83% —— 不能指望一次抽中。但这正是要测的
+   东西：「宿主有没有把歌词挂到事件上」只有真抽到才看得见。
+   上限 800 次：全不中的概率约 0.13%，到这个量级才该报失败。
+   （第一版写 300，实测真跑出「300 次没中」—— 那不是 bug 是 8.3% 的运气。
+   样本量不够时，随机性会冒充回归信号。） */
+const ROLL_LIMIT = 800
+let lyricHit = null
+for (let i = 0; i < ROLL_LIMIT && lyricHit === null; i += 1) {
+  const rolled = await request('/dsh-lucky-block/roll', { cookie }, { trigger: 'click' })
+  const audio = rolled.json?.value?.audio
+  if (audio && Array.isArray(audio.lyrics) && audio.lyrics.length > 0) lyricHit = audio
+}
+check(lyricHit !== null, `${ROLL_LIMIT} 次单击内抽到带歌词的那首`, lyricHit ? lyricHit.file : '一次都没抽到')
+if (lyricHit !== null) {
+  check(lyricHit.file === 'never-give-you-up.ogg', '带歌词的是 never-give-you-up', lyricHit.file)
+  check(lyricHit.lyrics.length >= 10, '歌词行数够', `${lyricHit.lyrics.length} 行`)
+  check(
+    lyricHit.lyrics.every((l) => Number.isFinite(l.t) && typeof l.text === 'string' && l.text.length > 0),
+    '歌词每行都是 {t:number, text:string}',
+    JSON.stringify(lyricHit.lyrics[0] ?? null),
+  )
+  check(
+    lyricHit.lyrics.every((l, i) => i === 0 || l.t > lyricHit.lyrics[i - 1].t),
+    '歌词时间轴严格递增',
+  )
+  check(lyricHit.lyrics[0].t <= 5, '歌词第一句在 5 秒内', `${lyricHit.lyrics[0].t}s`)
+  /* 时间是**片段内**秒数：片段 42 秒，越界的话客户端会一路显示到结尾，
+     表现为「歌停了字幕还挂在那儿」。 */
+  check(
+    lyricHit.lyrics.every((l) => l.t >= 0 && l.t < 42),
+    '所有时间点落在 42 秒片段内',
+    `最大 ${Math.max(...lyricHit.lyrics.map((l) => l.t))}s`,
+  )
+  console.log(`  抽到带歌词的那首：${lyricHit.title}（${lyricHit.lyrics.length} 行）`)
+
+  /* 没做歌词的歌必须发 null，而不是空数组或一个假的空时间轴 ——
+     客户端靠 Array.isArray 判断，两者在客户端没区别，但 null 更诚实。 */
+  let plainHit = null
+  for (let i = 0; i < ROLL_LIMIT && plainHit === null; i += 1) {
+    const rolled = await request('/dsh-lucky-block/roll', { cookie }, { trigger: 'click' })
+    const audio = rolled.json?.value?.audio
+    if (audio && audio.lyrics === null) plainHit = audio
+  }
+  check(plainHit !== null, '没做歌词的歌发的是 null', plainHit ? plainHit.file : `${ROLL_LIMIT} 次没抽到`)
+}
+
 console.log('')
 console.log('  注意：事件的抽取池在 apply 时建好一次，所以上面的开关**要重启 dsh 才影响抽取**。')
 console.log('  跨重启的验证（关掉后 400 次单击里 0 命中）是手工做过的，脚本做不了进程重启。')
 
-console.log(fail === 0 ? '\nALL GREEN —— 音频路由可用，每首歌都是独立可开关的事件。' : `\n${fail} FAILED`)
+console.log(fail === 0 ? '\nALL GREEN —— 音频路由可用、每首歌独立可开关，歌词随事件一起下来。' : `\n${fail} FAILED`)
 process.exit(fail === 0 ? 0 : 1)
