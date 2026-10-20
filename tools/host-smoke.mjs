@@ -538,7 +538,10 @@ if (!soundRoute) {
     `实际 ${soundRoute.path}`,
   )
 
-  const soundNames = ['dig1.ogg', 'dig2.ogg', 'dig3.ogg', 'dig4.ogg', 'break.ogg']
+  /* 三组音每组取一个代表：挖掘（dig）、方块碎裂（glass）、镐子报废（break）。
+     原先只验 break.ogg —— 而现在 break 在正常使用里极少播（59 次挖穿才一次），
+     真正常用的 block 组如果坏了，只验 break 是看不出来的。 */
+  const soundNames = ['dig1.ogg', 'dig2.ogg', 'dig3.ogg', 'dig4.ogg', 'glass1.ogg', 'glass2.ogg', 'glass3.ogg', 'break.ogg']
   for (const name of soundNames) {
     const res = makeBinaryRes()
     await soundRoute.handler(
@@ -582,7 +585,10 @@ if (!soundRoute) {
   )
   soundCheck(bare.status !== 200 || !Buffer.isBuffer(bare.body), '裸前缀访问不返回音频')
 
-  // 磁盘上应该有 16 个文件（4 挖掘 + 1 碎裂 + 3 玻璃 + 8 其它）。
+  // 磁盘上应该有 16 个文件（4 挖掘 + 3 玻璃 + 1 镐子报废 + 8 其它）。
+  /* 注意：玻璃那 3 个现在才是「方块碎裂」的主角（客户端 block 组），
+     break.ogg 反而退成了「每 59 次挖穿才响一次」的镐子报废音。
+     文件数没变，但哪个常用、哪个罕见整个反过来了。 */
   const soundsDir = new URL('../lib/sounds/', import.meta.url)
   const list = await readdir(fileURLToPath(soundsDir))
   const oggs = list.filter((f) => f.endsWith('.ogg'))

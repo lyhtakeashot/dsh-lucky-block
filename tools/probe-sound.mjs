@@ -62,7 +62,10 @@ const check = (ok, label, detail = '') => {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? (ok ? ` (${detail})` : ` —— ${detail}`) : ''}`)
 }
 
-const NAMES = ['dig1.ogg', 'dig2.ogg', 'dig3.ogg', 'dig4.ogg', 'break.ogg']
+/* 三组音各验一个：dig = 挖掘循环（block.stone.hit）、
+   glass = 方块碎裂（block.stone.break）、break = 镐子报废（entity.item.break）。
+   第三组只在挖够 59 次后才会响，但文件本身必须一直可取 —— 否则第 59 下会静音。 */
+const NAMES = ['dig1.ogg', 'dig2.ogg', 'dig3.ogg', 'dig4.ogg', 'glass1.ogg', 'break.ogg']
 for (const name of NAMES) {
   // 模拟浏览器 <audio> 的真实请求头：带 Referer/Sec-Fetch，由 cookie 认证。
   const res = await request('GET', `/dsh-lucky-block/sound/${name}`, {
