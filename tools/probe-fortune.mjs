@@ -59,6 +59,19 @@ async function post(p, body = {}) {
   return { status: res.status, data: await res.json() }
 }
 
+/* 进来先记住**用户真实的**覆盖层，然后把覆盖层清空。
+   这个探针验的是出厂事件池，而用户的 config.json 可能把 fortune 关掉
+   （关掉的事件在 buildEvents 里就被整条摘掉，`/ping` 的 events 里根本没有它，
+   于是每条断言都会假红，看起来像代码坏了）。和 host-smoke 那个坑同源，
+   只不过那边是打本地 import、能把 DSH_HOME 指到临时目录；这边打真实宿主，
+   只能备份 + 清空 + 还原。 */
+const readEvents = async () => {
+  const res = await post('/dsh-lucky-block/settings')
+  return JSON.parse(JSON.stringify(res.data?.value?.eventOverrides ?? {}))
+}
+const userEvents = await readEvents()
+await post('/dsh-lucky-block/save-settings', { events: {} })
+
 /* 会话目录：$DSH_HOME/sessions/<转义后的工作区路径>/<sessionId>/ */
 const dshHome = process.env.DSH_HOME || path.join(process.env.USERPROFILE || '', '.dsh')
 const sessionsRoot = path.join(dshHome, 'sessions')
@@ -460,6 +473,12 @@ if (arrStart > 0 && fnStart > 0 && wtStart > 0) {
      写进签文的话，将来新增一档忘了抄就漏了。 */
   check(!fortunes.some((f) => (f.texts || []).some((t) => t.includes('无科学依据'))), '免责声明不写在签文里（由宿主统一追加）')
 }
+
+/* 还原用户的事件覆盖层。
+   放在所有 return / exit 之前，而不是挑某一条分支去还原：
+   探针里有好几处提前退出，漏一处就会把用户的配置留在被清空的状态里 ——
+   那他重启之后会发现「我关掉的事件全回来了」，而且不知道是谁干的。 */
+await post('/dsh-lucky-block/save-settings', { events: userEvents })
 
 console.log('')
 if (fail === 0) {

@@ -1313,8 +1313,7 @@ URL 被判非法 —— 这些情况都没有 `ended` 可等。`audio.play()` �
 
 ### 16.2 为什么不用「临时把概率调到 100%」
 
-- 要改 `config.json`，**就会留下忘了还原的状态**（而且事件池在 `apply()` 时建好，
-  还得重启才生效）；
+- 要改 `config.json`，**就会留下忘了还原的状态**；
 - 生产路径为了测试多出一个分支，那个分支平时不跑，腐坏了没人知道。
 
 改成请求体里的 `event` 参数就没有这两个问题：不落任何状态、不开分支
@@ -1431,6 +1430,108 @@ URL 被判非法 —— 这些情况都没有 `ended` 可等。`audio.play()` �
 
 `tools/konami-check.mjs` 用源码抽取跑了 17 条断言。它值得单独存在的原因是：
 这段代码**没有任何输出**，"按错了没反应"和"按对了也没反应"在界面上长得一样。
+
+## 18. 设置保存即生效：重建事件池，而不是重启
+
+### 18.1 问题在哪里
+
+事件池在 `apply()` 里建好一次就再也没变过：
+
+```js
+const events = await buildEvents()
+```
+
+于是用户改一个权重、关掉一条事件，都必须重启 dsh。这不是 dsh 的限制 ——
+`apply()` 只跑一次是插件模型，但**池子本身是纯数据**，什么时候重建都行。
+
+用户的原话是「为什么每次都要重启才能得到重新设置后的效果，不能直接出现吗」。
+
+### 18.2 改法
+
+`apply()` 里把 `const events` 换成可变的模块级变量 + 一个重建函数：
+
+```js
+let events = []
+async function rebuildEvents(reason = null) {
+  events = await buildEvents()   // 只在成功后才赋值
+  ...
+}
+await rebuildEvents()
+```
+
+`saveSettings` 在写完盘之后，**只有 patch 里带 `events` 时**才重建。
+
+三个判断：
+
+1. **只在改事件时重建。** 只改音效开关时重建等于白读四个语料库
+   （冷知识 818 条、笑话 353 条 + 30 条点评、五首歌、词库），
+   而 `sound` 是客户端读到之后自己应用到播放引擎实例上的，宿主侧无事可做。
+2. **`rebuildEvents` 先算再赋。** `events = await buildEvents()` 里的赋值发生在
+   右侧求值之后，`buildEvents()` 抛错时 `events` 还是旧的 ——
+   不会出现「一半新一半旧」的池子。
+3. **失败要把话说出来。** 写盘成功但重建失败时返回 `ok: false` 并带上原因，
+   而不是假装成功：用户会看到「设置已写入，但事件池重建失败」，
+   而不是「面板上改了、抽出来还是旧的」这种只能靠猜的问题。
+
+### 18.3 由此冒出来的两个副产品
+
+**`defaultWeight` 必须在贴覆盖层之前记。** `applyEventOverrides` 会把
+`weight` 换成覆盖后的值，不先记出厂值就永久丢了：用户把某条调到 6，
+面板上的「恢复默认」会恢复到 6 —— 等于什么都没恢复。
+
+**面板必须列 `allEvents` 而不是 `events`。** 这是改热重载时**改出来的一个真回归**：
+
+`settings()` 原本拿 `events`（已贴过覆盖层）去列清单，而关掉的事件在
+`applyEventOverrides` 里被整条摘掉。于是「在面板上关掉一条」= 「那条从面板上消失」，
+用户再也打不开它。而「关掉」这个动作本来就是在面板上做的。
+
+修法是在 `buildEvents()` 的返回值上挂一份没贴覆盖层的完整清单：
+
+```js
+const live = applyEventOverrides(marked, eventOverrides)
+live.allEvents = marked
+return live
+```
+
+`settings()` 列 `events.allEvents ?? events`，回显的 `enabled` / `weight`
+仍从 `overrides` 取。`probe-settings.mjs` 有两条互补断言钉住它：
+关掉之后**仍在面板里**（`weight = 0`），但**已不在运行期池里** ——
+两条一起才说明「关掉」既不是「删掉」也不是「只是标个记但照抽不误」。
+
+顺带一个判据的修正：只手写 `{ weight: 0 }` 时回显的 `enabled` 仍是 `true`
+（`enabled` 字段根本没被写过）。断言要看 `weight === 0` 而不是 `enabled === false`，
+否则会把一种合法的关法判成坏的。「关掉」有两个并列条件，
+`applyEventOverrides` 里是 `patch.enabled === false` 与 `weight <= 0` 各走各的。
+
+### 18.4 探针也要对付「用户关掉了东西」
+
+改完热重载之后，`probe-settings` / `probe-audio` / `probe-fortune` /
+`probe-local-path` / `probe-persona` 一口气红了——**不是代码坏了**，
+是这些探针打的是真实宿主，而用户已经把 fortune / trivia / joke / news
+等事件全关掉了。关掉的事件在 `buildEvents` 里就被摘掉，于是：
+
+- 「事件清单含 joke」直接不成立；
+- `event: 'joke'` 变成「没有 id 为 joke 的事件」，报出来的却是「指定 joke 拿得到 value」；
+- `probe-fortune` 连 fortune 都指定不到，5 条断言全红。
+
+这和 `host-smoke` 那个坑同源。区别是 host-smoke 打本地 import，能把
+`DSH_HOME` 指到临时空目录；探针打的是真实宿主，只能**备份 + 清空 + 还原**。
+
+统一模式（五个探针一致）：
+
+```js
+const userEvents = (await api('/dsh-lucky-block/settings')).json?.value?.eventOverrides ?? {}
+await api('/dsh-lucky-block/save-settings', { method: 'POST', body: JSON.stringify({ events: {} }) })
+// ... 跑断言 ...
+await api('/dsh-lucky-block/save-settings', { method: 'POST', body: JSON.stringify({ events: userEvents }) })
+```
+
+还原那一句放在**唯一的收尾处**，不塞进各条分支 —— 探针里有好几处提前
+`process.exit`，漏一处就把用户的配置留在清空态，他重启后会发现
+「我关掉的事件全回来了」，而且不知道是谁干的。
+
+教训一句话：**探针不能假设用户没动过设置**。默认状态是代码的性质，
+当前设置是用户的性质，验代码就得先把用户那层摘掉。
 
 
 

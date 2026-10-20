@@ -53,6 +53,19 @@ const cookie = list.map((c) => String(c).split(';')[0]).join('; ')
 if (!cookie) { console.error('没拿到 cookie'); process.exit(1) }
 const H = { cookie, origin: `http://${HOST}`, 'content-type': 'application/json' }
 
+/* 进来先记住**用户真实的**事件覆盖层，然后把覆盖层清空，末尾还原。
+   这个探针要指定 joke / trivia / pedigree 等具体事件，而用户的 config.json
+   可能已经把它们关掉了 —— 关掉的事件在 buildEvents 里就被整条摘掉，
+   于是 `event: 'joke'` 会变成「没有 id 为 joke 的事件」，报出来的错却是
+   「指定 joke 拿得到 value」，看起来像正文坏了。和 host-smoke 那个坑同源
+   （那边打本地 import，能把 DSH_HOME 指到临时目录；这边打真实宿主，只能备份还原）。 */
+const userEvents = ((await (async () => {
+  const r = await request('GET', '/dsh-lucky-block/settings', H)
+  const j = JSON.parse(r.body)
+  return (j && j.value && j.value.eventOverrides) || {}
+})()))
+await request('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({ events: {} }))
+
 // 加载本地库，供逐条比对。
 const jokesMod = await import('../lib/jokes.js')
 const lib = await jokesMod.loadJokeLibrary()
@@ -179,9 +192,11 @@ if (pedigreeValue) {
   /* 它念的次数应当是「宿主记的次数」或「记的次数 + 1」——
      前者是它先读后念（本次还没计数），后者是本次已计。两种都算诚实，
      唯独**编出来的数**不算。这里刻意不要求精确相等：
-     那会把「先计数还是先念」这个实现顺序当成契约。 */
-  const said = Number((text.match(/你点了我\s*(\d+)\s*次/) || [])[1])
-  const real = Number(counters.clicks)
+     那会把「先计数还是先念」这个实现顺序当成契约。 */  const said = Number((text.match(/你点了我\s*(\d+)\s*次/) || [])[1])
+  /* 它念的是「点击 + 长按」的总数（原文「其中 N 次是长按」），
+     所以对照的也必须是这两个数之和 —— 拿 clicks 单个比会在用户挖穿过几次之后
+     永远差那么几次，看起来像它念错了，其实是对照物选错了。 */
+  const real = Number(counters.clicks) + Number(counters.holds)
   check(Number.isFinite(said), 'pedigree 念了点击次数', `正文：${text.slice(0, 60)}`)
   if (Number.isFinite(said) && Number.isFinite(real)) {
     check(
@@ -227,6 +242,11 @@ if (holdValue) {
   check(holdValue.createdNew === true, '长按标记了「新建了会话」', `createdNew=${holdValue.createdNew}`)
   console.log(`  长按事件：${holdValue.eventId} → 会话 ${holdValue.sessionId}`)
 }
+
+/* 统一还原用户的事件覆盖层（文件开头备份的那份）。
+   放在这里而不是每条分支里各还原一次 —— 上面有好几处提前 process.exit，
+   漏一处用户的配置就被留在清空态：他重启后会发现「我关掉的事件全回来了」。 */
+await request('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({ events: userEvents }))
 
 console.log('')
 if (fail > 0) { console.log(`!!! ${fail} 项未通过`); process.exit(1) }

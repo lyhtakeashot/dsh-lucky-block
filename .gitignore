@@ -31,16 +31,11 @@ cm.txt
 # 抓音频时的中间文件（B 站源文件几十 MB，不进仓库）
 # 用通配符而不是逐个列：每次换歌都会多出几个，列漏了就会把 20 MB 的 m4a 提交进去
 docs/.*-src.m4a
-docs/.loudest.txt
-docs/.loud-house.txt
-docs/.loud-myshot.txt
-docs/.audio-found.txt
-docs/.audio-url.txt
-docs/.bili-search.txt
-# 搜 BV 号、核验候选时落的中间文本（每次新建，别攒）
-docs/.c*.txt
-docs/.s*.txt
-docs/.pr.json
+
+# docs/ 下所有点前缀的临时文件：探针输出、token、抓取中间文本、一次性脚本。
+# 过去是一条条往这里加，加漏一次就会 `git add -A` 进仓库（踩过好几回）。
+# docs/ 只该有 .md 和 research-notes/，其余都算草稿。
+docs/.*
 
 # 抓 B 站音频 / 找高潮的一次性工具（点前缀 = 不进 npm 包）
 tools/.fetch-bv.mjs

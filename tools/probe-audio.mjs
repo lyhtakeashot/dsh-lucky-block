@@ -59,6 +59,15 @@ if (cookie.length === 0) {
 }
 
 let fail = 0
+
+/* 先把**用户真实的**事件覆盖层记下来并清空，末尾原样还原。
+   这个探针验的是出厂事件池（每首歌都在、都能单独关），而用户的 config.json
+   可能把某几首歌关掉 —— 关掉的事件在 buildEvents 里就被整条摘掉，
+   于是「指定 audio-satisfied」会变成「没有 id 为 audio-satisfied 的事件」，
+   两条断言假红，看起来像歌词坏了。和 host-smoke 那个坑同源。 */
+const userEvents = (await request('/dsh-lucky-block/settings', { cookie })).json?.value?.eventOverrides ?? {}
+await request('/dsh-lucky-block/save-settings', { cookie }, { events: {} })
+
 const check = (ok, label, detail = '') => {
   /* 参数顺序写反时（label 和 boolean 换位）以前会静默通过 —— `ok` 收到
      非空字符串是真值，于是永远 PASS，标签位置印出一个 `true`。
@@ -231,4 +240,9 @@ console.log('  注意：事件的抽取池在 apply 时建好一次，所以上�
 console.log('  跨重启的验证（关掉后 400 次单击里 0 命中）是手工做过的，脚本做不了进程重启。')
 
 console.log(fail === 0 ? '\nALL GREEN —— 音频路由可用、每首歌独立可开关，歌词随事件一起下来。' : `\n${fail} FAILED`)
+
+/* 统一还原用户的事件覆盖层（文件开头备份的那份）。
+   放这一处而不是塞进每条分支：下面「曲库不足两条」的 else 分支就不会还原，
+   漏一处用户的配置就被留在清空态，他重启后发现关掉的歌全回来了。 */
+await request('/dsh-lucky-block/save-settings', { cookie }, { events: userEvents })
 process.exit(fail === 0 ? 0 : 1)

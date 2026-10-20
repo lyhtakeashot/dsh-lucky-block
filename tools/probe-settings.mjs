@@ -80,6 +80,16 @@ const readSettings = async () => {
   return j.value
 }
 
+/* 进来先记住**用户真实的**覆盖层，然后把覆盖层清空。
+   不这么做的话，这个探针就是在测「用户当前关掉了哪些事件」：
+   用户把 paper / trivia 全关掉之后，事件清单里根本没这两条，
+   于是「paper 标为长按」这种断言会假红，看起来像代码坏了。
+   （host-smoke 也踩过同一个坑，那里的办法是把 DSH_HOME 指到临时目录；
+   这里是打真实宿主，只能备份 + 清空 + 还原。） */
+const originalSettings = await readSettings()
+const rawEvents = JSON.parse(JSON.stringify(originalSettings.eventOverrides ?? {}))
+await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({ events: {} }))
+
 const before = await readSettings()
 check(typeof before.sound === 'boolean', 'settings() 返回 sound 布尔值', `sound=${before.sound}`)
 check(typeof before.configPath === 'string' && before.configPath.length > 0, 'settings() 仍返回 configPath')
@@ -156,8 +166,7 @@ const afterBad = await readSettings()
 check(typeof afterBad.sound === 'boolean', '非法值之后 sound 仍是布尔值', `sound=${JSON.stringify(afterBad.sound)}`)
 
 /* ---- 事件权重 / 开关覆盖层 ---- */
-// 先记住原值，跑完要还原（探针不该把用户的事件配置留在改过的状态）。
-const rawEvents = JSON.parse(JSON.stringify(before.eventOverrides ?? {}))
+/* 覆盖层在文件开头已经被清空过（`rawEvents` 存的是用户原值）。 */
 
 // 写一条合法的：把 trivia 权重改成 6。
 const w = await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({
@@ -176,6 +185,21 @@ check(triviaRow?.weight === 6, '事件清单里的覆盖后权重跟着变（面
 check(triviaRow?.defaultWeight !== 6, 'defaultWeight 保持出厂值不被覆盖',
   `defaultWeight=${triviaRow?.defaultWeight}`)
 
+/* 保存后**立刻生效**，不需要重启宿主。
+   判据是 /ping 的 events —— 它读的是运行期那个事件池本身，
+   池子没重建的话这里会一直是启动时的权重（改动前的实现就是这样）。
+   这一条是这一整个探针里唯一能证明「热重载真的接上了」的断言。 */
+const pingEvents = async () => {
+  const r = await requestFull('POST', '/dsh-lucky-block/ping', H, '{}')
+  return JSON.parse(r.body).value.events
+}
+const hot = await pingEvents()
+check(
+  hot.find((e) => e.id === 'trivia')?.weight === 6,
+  '保存即生效：/ping 的运行期事件池里 trivia 已是 6（不需要重启）',
+  `weight=${hot.find((e) => e.id === 'trivia')?.weight}`,
+)
+
 // 写一条关掉的：weight 0 等价于 enabled:false。
 await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({
   events: { joke: { weight: 0 } },
@@ -183,6 +207,23 @@ await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({
 const afterOff2 = await readSettings()
 check(afterOff2.eventOverrides?.joke?.weight === 0, 'weight 0 落盘（= 关掉这条事件）',
   `eventOverrides.joke=${JSON.stringify(afterOff2.eventOverrides?.joke)}`)
+/* 关掉一条之后它必须**仍然出现在面板里**，否则用户再也打不开它。
+   这是热重载改出来过一次的真回归：settings() 原来拿 `events`（已经贴过覆盖层、
+   关掉的事件被整条摘掉）去列清单，于是「在面板上关掉」= 「从面板上消失」。
+   现在改成列 `events.allEvents`（没贴覆盖层的那份），这一条钉住它。 */
+const stillListed = afterOff2.events.find((e) => e.id === 'joke')
+check(Boolean(stillListed), '关掉的事件仍列在面板里（否则再也打不开）',
+  stillListed ? `weight=${stillListed.weight}` : 'joke 不见了')
+/* 回显的「关掉」看的是 weight === 0，**不是** enabled === false：
+   这里写的是 `{ weight: 0 }`，`enabled` 字段根本没被写过。
+   面板路径下客户端取消勾选时会同时写 `{enabled:false, weight:0}`，
+   但只手写 weight 0 是一条合法的「关掉」，不该被断言排除掉。 */
+check(stillListed?.weight === 0, '它回显为 weight=0（= 关掉）', `weight=${stillListed?.weight}`)
+/* 与上一条互补：面板里看得见，但**运行期池子里不能有它** ——
+   两条一起才说明「关掉」既不是「删掉」也不是「只是标个记但照抽不误」。 */
+const poolAfterOff = await pingEvents()
+check(!poolAfterOff.some((e) => e.id === 'joke'), '但它已不在运行期事件池里（真的关掉了）',
+  JSON.stringify(poolAfterOff.map((e) => e.id)))
 
 // 脏值必须被静默修正，而不是 500 或把配置写坏。
 const dirty = await requestFull('POST', '/dsh-lucky-block/save-settings', H, JSON.stringify({

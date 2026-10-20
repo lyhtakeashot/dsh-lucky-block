@@ -98,6 +98,15 @@ function check(ok, label, detail) {
 await handshake()
 console.log('handshake OK')
 
+/* 进来先记住**用户真实的**事件覆盖层，然后把覆盖层清空，末尾还原。
+   这个探针要断言「事件清单含 joke / news」并靠抽长按池拿到 agent 事件，
+   而用户的 config.json 可能已经把它们全关掉了 —— 关掉的事件在 buildEvents
+   里就被整条摘掉，于是这两条断言假红，看起来像事件清单坏了。
+   和 host-smoke 那个坑同源（那边打本地 import，能把 DSH_HOME 指到临时目录；
+   这边打真实宿主，只能备份 + 清空 + 还原）。 */
+const userEvents = (await api('/dsh-lucky-block/settings')).json?.value?.eventOverrides ?? {}
+await api('/dsh-lucky-block/save-settings', { method: 'POST', body: JSON.stringify({ events: {} }) })
+
 /* ---------- 1. ping ---------- */
 const ping = await api('/dsh-lucky-block/ping')
 const pv = ping.json?.value
@@ -231,6 +240,11 @@ const ping2 = await api('/dsh-lucky-block/ping')
 const p2 = ping2.json?.value?.persona
 check((p2?.diceCount ?? 0) > (pv?.persona?.diceCount ?? -1),
   'diceCount 递增', `${pv?.persona?.diceCount} -> ${p2?.diceCount}`)
+
+/* 统一还原用户的事件覆盖层（文件开头备份的那份）。
+   放这一处而不是塞进每条分支：上面有几处提前退出，
+   漏一处用户的配置就被留在清空态 —— 他重启后发现关掉的事件全回来了。 */
+await api('/dsh-lucky-block/save-settings', { method: 'POST', body: JSON.stringify({ events: userEvents }) })
 
 console.log(fail === 0 ? '\nALL GREEN' : `\nFAILED ${fail}`)
 process.exit(fail === 0 ? 0 : 1)
