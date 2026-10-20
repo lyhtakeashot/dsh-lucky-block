@@ -74,14 +74,52 @@ const unclaimed = new Set() // 冒出来但没有任何 roll 认领 —— 这�
 let visualChecked = 0
 let failures = 0
 
-/* 两个池都打：**视觉事件全在 click 池**（popups/bluescreen 现在归左键单点），
-   而 agent 事件全在 hold 池。只打一个池就只能验到一半，而且
-   `/roll` 不传 trigger 时默认走 hold，视觉事件会永远抽不到。
-   轮转着打还能顺带让 agent 事件继续贡献「认领新会话」这条交叉验证。 */
-const TRIGGERS = ['click', 'hold']
+/* 视觉事件**逐条指定**打，不靠随机抽中。
+   原来是在两个池之间轮转着随机打 60 次、撞到 6 次视觉事件就停 —— 视觉事件占
+   单击池 26.6%，60 次里凑不够 6 个的概率不为零，而且每次撞到哪一条也是随机的，
+   同一条断言今天验的是 popups、明天验的是 bluescreen，两种东西混在一个计数里。
 
-for (let i = 0; i < 60 && visualChecked < 6; i += 1) {
-  const trigger = TRIGGERS[i % TRIGGERS.length]
+   每个视觉事件打 3 次而不是 1 次：payload 结构只需要一次就能验，但
+   bluescreen 有三张脸、popups 有三种皮，多打几次才可能覆盖到不止一种。
+   这里只打印看到了几种，不作硬断言 —— 3 次抽样覆盖 3 种的概率是 22%，
+   拿它当断言等于把运气写进测试。 */
+const VISUAL_ROUNDS = 3
+
+for (const id of visualIds) {
+  for (let round = 0; round < VISUAL_ROUNDS; round += 1) {
+    const roll = await request('POST', '/dsh-lucky-block/roll', HEADERS, JSON.stringify({ trigger: 'click', event: id }))
+    if (roll.status !== 200) {
+      failures += 1
+      console.log(`  FAIL  [${id}] roll 返回 ${roll.status}`)
+      continue
+    }
+    const value = JSON.parse(roll.body).value
+    const fresh = [...listSessions()].filter((sessionId) => !known.has(sessionId))
+    for (const sessionId of fresh) known.add(sessionId)
+
+    visualChecked += 1
+    const problems = []
+    if (value.eventId !== id) problems.push(`eventId=${JSON.stringify(value.eventId)}`)
+    if (value.local !== true) problems.push(`local=${JSON.stringify(value.local)}`)
+    if (value.sessionId !== null) problems.push(`sessionId=${JSON.stringify(value.sessionId)}`)
+    if (!value.visual) problems.push('无 visual spec')
+    if (value.createdNew !== false) problems.push(`createdNew=${JSON.stringify(value.createdNew)}`)
+    /* 指定了事件却建了会话 —— 这是最贵的一种坏法：用户点一下，烧一次 token。 */
+    if (fresh.length > 0) problems.push(`新出现了 ${fresh.length} 个会话`)
+    if (problems.length > 0) {
+      failures += 1
+      console.log(`  FAIL  [${id}] ${problems.join('; ')}`)
+    } else {
+      console.log(`  PASS  [${id}] local=true sessionId=null visual=${value.visual.kind} 新增会话=0`)
+    }
+  }
+}
+
+/* hold 池仍然随机打，因为它验的是另一件事：AI 事件真建了会话，而且那个会话 id
+   出现在 roll 返回值里（用户被带过去的是对的那个会话）。这条必须走随机路径 ——
+   指定事件虽然也能建会话，但验不到「抽签之后 sessionId 依然对得上」。 */
+for (let i = 0; i < 6; i += 1) {
+  const trigger = 'hold'
   const roll = await request(
     'POST',
     '/dsh-lucky-block/roll',
@@ -93,7 +131,6 @@ for (let i = 0; i < 60 && visualChecked < 6; i += 1) {
     continue
   }
   const value = JSON.parse(roll.body).value
-  const isVisual = visualIds.includes(value.eventId)
 
   // 给新会话一点时间落盘（agent 事件是异步建会话的）。
   await new Promise((r) => setTimeout(r, 1500))
@@ -104,25 +141,9 @@ for (let i = 0; i < 60 && visualChecked < 6; i += 1) {
     if (value.sessionId && id === value.sessionId) claimed.add(id)
     else unclaimed.add(id)
   }
-
-  if (isVisual) {
-    visualChecked += 1
-    const problems = []
-    if (value.local !== true) problems.push(`local=${JSON.stringify(value.local)}`)
-    if (value.sessionId !== null) problems.push(`sessionId=${JSON.stringify(value.sessionId)}`)
-    if (!value.visual) problems.push('无 visual spec')
-    if (value.createdNew !== false) problems.push(`createdNew=${JSON.stringify(value.createdNew)}`)
-    if (problems.length > 0) {
-      failures += 1
-      console.log(`  FAIL  [${value.eventId}] ${problems.join('; ')}`)
-    } else {
-      console.log(`  PASS  [${value.eventId}] local=true sessionId=null visual=${value.visual.kind} 新增会话=${fresh.length}`)
-    }
-  } else {
-    console.log(
-      `  ${trigger === 'click' ? 'click' : 'hold'} [${value.eventId}] 新增会话=${fresh.length} 认领=${fresh.includes(value.sessionId) ? 'yes' : 'no'}`,
-    )
-  }
+  console.log(
+    `  ${trigger} [${value.eventId}] 新增会话=${fresh.length} 认领=${fresh.includes(value.sessionId) ? 'yes' : 'no'}`,
+  )
 }
 
 console.log('')

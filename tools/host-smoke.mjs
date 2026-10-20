@@ -135,6 +135,110 @@ const visualIds = evs.filter((e) => e.kind === 'visual').map((e) => e.id)
 const agentIds = evs.filter((e) => e.kind === 'agent').map((e) => e.id)
 const localIds = evs.filter((e) => e.kind === 'local').map((e) => e.id)
 console.log('visual events:', JSON.stringify(visualIds))
+
+/* ------------------------------------------------------------------ *
+ * 指定事件重放（/roll 的 event 参数）
+ *
+ * 存在的理由：音乐只占 5%，带歌词那首每次约 0.83%，靠反复点去碰是拿运气
+ * 当回归信号。指定 event 之后，「这条事件的 payload 长什么样」变成确定的事，
+ * 概率则另外用离线抽样验（probe-fortune 里 drawFortune 跑 20 万次）。
+ *
+ * 这里验三件事：
+ *   1. 指定一个存在的 id 拿到的是**那一条**，不是随机的另一条
+ *   2. 指定另一个池子的 id 会被拒绝（不能静默抽一条别的顶上去）
+ *   3. 指定不存在的 id 会被拒绝，且报错里说得出「没有这个 id」
+ * ------------------------------------------------------------------ */
+console.log('\n-- 指定事件重放 --')
+const replayRoute = routes.get('/dsh-lucky-block/roll')
+if (!replayRoute) {
+  console.error('FAIL  没有注册 /dsh-lucky-block/roll 路由')
+  process.exit(1)
+}
+
+/* 一次性的假 req/res。
+   注意 req 必须是事件式的：宿主读 body 用的是 readRequestBody(req)
+   （lib/index.js:2409），它监听 'data'/'end'/'error'，不是 asyncIterator。
+   早前按 asyncIterator 造出来的假 req 会让读 body 永远挂着，表现成 500。 */
+async function callRoll(body) {
+  const res = {
+    body: null,
+    statusCode: 0,
+    writeHead(code) { this.statusCode = code },
+    setHeader() {},
+    end(text) { this.body = text },
+  }
+  const listeners = new Map()
+  const req = {
+    method: 'POST',
+    url: '/dsh-lucky-block/roll',
+    headers: { host: '127.0.0.1:19399', 'content-type': 'application/json' },
+    on(event, fn) {
+      listeners.set(event, fn)
+      return req
+    },
+    destroy() {},
+  }
+  const promise = replayRoute.handler(req, res)
+  // handler 挂完监听后立刻喂数据：先 data 再 end，与真实 socket 一致。
+  await Promise.resolve()
+  const onData = listeners.get('data')
+  const onEnd = listeners.get('end')
+  if (onData) onData(Buffer.from(JSON.stringify(body)))
+  if (onEnd) onEnd()
+  await promise
+
+  let json = null
+  try { json = JSON.parse(res.body) } catch { /* 忽略 */ }
+  return { status: res.statusCode, json }
+}
+
+const replayFail = []
+
+/* 选一条**零 token** 的本地事件来重放。不能用长按池的 agent 事件 —— 那会真开
+   会话、真烧 token，冒烟测试不该有这种副作用。fortune 好的一点是它必然返回
+   localText，且不依赖任何外部资源。 */
+const replayTarget = localIds.includes('fortune') ? 'fortune' : localIds[0]
+const replayed = await callRoll({ trigger: 'click', event: replayTarget })
+if (replayed.status !== 200 || !replayed.json?.value) {
+  replayFail.push(`指定 ${replayTarget} 没有成功返回（status=${replayed.status}）`)
+} else {
+  const value = replayed.json.value
+  if (value.eventId !== replayTarget) replayFail.push(`指定 ${replayTarget} 却抽到了 ${value.eventId}`)
+  if (typeof value.localText !== 'string' || value.localText.length === 0) {
+    replayFail.push(`指定 ${replayTarget} 的返回值没有正文`)
+  }
+  console.log(`  指定 ${replayTarget} → ${value.eventId}（正文 ${String(value.localText || '').length} 字）`)
+}
+
+/* 连续指定两次同一条，必须是同一条 —— 这条能挡住「event 参数被忽略、
+   实际上还在抽签」的坏实现（那种情况下两次很容易抽到不同事件）。 */
+const again = await callRoll({ trigger: 'click', event: replayTarget })
+if (again.json?.value?.eventId !== replayTarget) {
+  replayFail.push(`第二次指定 ${replayTarget} 抽到了 ${again.json?.value?.eventId}（event 参数可能没生效）`)
+}
+
+// 跨池：paper 在 hold 池，用 click 去指定它必须被拒。
+const crossPool = await callRoll({ trigger: 'click', event: agentIds[0] })
+if (crossPool.status === 200) {
+  crossPool.status // 保持引用，避免 linter 抱怨
+  replayFail.push(`跨池指定 ${agentIds[0]} 没有被拒绝（status=200）`)
+}
+if (crossPool.json?.ok !== false) replayFail.push('跨池指定的返回值没有 ok:false')
+
+// 不存在的 id
+const bogus = await callRoll({ trigger: 'click', event: 'no-such-event-xyz' })
+if (bogus.status === 200) replayFail.push('指定不存在的 id 没有被拒绝（status=200）')
+const bogusText = JSON.stringify(bogus.json ?? {})
+if (!bogusText.includes('no-such-event-xyz')) {
+  replayFail.push('指定不存在的 id 时的报错里没有回显这个 id（用户没法知道哪里拼错了）')
+}
+
+if (replayFail.length > 0) {
+  for (const problem of replayFail) console.error(`FAIL  ${problem}`)
+  process.exit(1)
+}
+console.log('  replay: OK')
+
 console.log('agent events:', JSON.stringify(agentIds))
 console.log('local text events:', JSON.stringify(localIds))
 

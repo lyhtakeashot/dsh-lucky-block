@@ -174,20 +174,16 @@ if (audioEvents.length >= 2) {
  * 4. 歌词随事件一起下来
  * ------------------------------------------------------------------ */
 
-/* 反复 roll 直到抽到带歌词的那首。音乐合计只占单击池 5%，其中带歌词的是
-   6 份里的 2 份，也就是每次约 0.83% —— 不能指望一次抽中。但这正是要测的
-   东西：「宿主有没有把歌词挂到事件上」只有真抽到才看得见。
-   上限 800 次：全不中的概率约 0.13%，到这个量级才该报失败。
-   （第一版写 300，实测真跑出「300 次没中」—— 那不是 bug 是 8.3% 的运气。
-   样本量不够时，随机性会冒充回归信号。） */
-const ROLL_LIMIT = 800
-let lyricHit = null
-for (let i = 0; i < ROLL_LIMIT && lyricHit === null; i += 1) {
-  const rolled = await request('/dsh-lucky-block/roll', { cookie }, { trigger: 'click' })
-  const audio = rolled.json?.value?.audio
-  if (audio && Array.isArray(audio.lyrics) && audio.lyrics.length > 0) lyricHit = audio
-}
-check(lyricHit !== null, `${ROLL_LIMIT} 次单击内抽到带歌词的那首`, lyricHit ? lyricHit.file : '一次都没抽到')
+/* 直接指定要哪一条，不走抽签。音乐合计只占单击池 5%，带歌词的那首每次约
+   0.83% —— 靠循环去碰就是拿运气当回归信号。反正要验的是「宿主有没有把歌词
+   挂到事件上」，那件事和它出现的概率毫无关系。
+   指定走的是和随机完全相同的下游（同一个 prepare、同一个 kind 分支），
+   所以这里看到的 payload 就是真抽到时会看到的 payload。 */
+const lyricHit = (await request('/dsh-lucky-block/roll', { cookie }, {
+  trigger: 'click',
+  event: 'audio-never-give-you-up',
+})).json?.value?.audio ?? null
+check(lyricHit !== null, '指定 audio-never-give-you-up 拿到了 audio payload', JSON.stringify(lyricHit))
 if (lyricHit !== null) {
   check(lyricHit.file === 'never-give-you-up.ogg', '带歌词的是 never-give-you-up', lyricHit.file)
   check(lyricHit.lyrics.length >= 10, '歌词行数够', `${lyricHit.lyrics.length} 行`)
@@ -208,18 +204,27 @@ if (lyricHit !== null) {
     '所有时间点落在 42 秒片段内',
     `最大 ${Math.max(...lyricHit.lyrics.map((l) => l.t))}s`,
   )
-  console.log(`  抽到带歌词的那首：${lyricHit.title}（${lyricHit.lyrics.length} 行）`)
+  console.log(`  拿到带歌词的那首：${lyricHit.title}（${lyricHit.lyrics.length} 行）`)
 
   /* 没做歌词的歌必须发 null，而不是空数组或一个假的空时间轴 ——
      客户端靠 Array.isArray 判断，两者在客户端没区别，但 null 更诚实。 */
-  let plainHit = null
-  for (let i = 0; i < ROLL_LIMIT && plainHit === null; i += 1) {
-    const rolled = await request('/dsh-lucky-block/roll', { cookie }, { trigger: 'click' })
-    const audio = rolled.json?.value?.audio
-    if (audio && audio.lyrics === null) plainHit = audio
-  }
-  check(plainHit !== null, '没做歌词的歌发的是 null', plainHit ? plainHit.file : `${ROLL_LIMIT} 次没抽到`)
+  const plainHit = (await request('/dsh-lucky-block/roll', { cookie }, {
+    trigger: 'click',
+    event: 'audio-satisfied',
+  })).json?.value?.audio ?? null
+  check(plainHit !== null, '指定 audio-satisfied 拿到了 audio payload', JSON.stringify(plainHit))
+  check(plainHit?.lyrics === null, '没做歌词的歌发的是 null', plainHit ? JSON.stringify(plainHit.lyrics) : 'payload 为空')
 }
+
+/* 指定不存在 / 不属于这一池的事件时必须报错，而不是静默抽一条别的 ——
+   静默放行会让「我传了 event 却没按我说的来」变成只能靠猜的问题。 */
+const bogus = await request('/dsh-lucky-block/roll', { cookie }, { trigger: 'click', event: 'no-such-event' })
+check(bogus.status !== 200 && bogus.json?.ok === false, '指定不存在的事件被拒绝', `status=${bogus.status}`)
+const wrongPool = await request('/dsh-lucky-block/roll', { cookie }, {
+  trigger: 'click',
+  event: 'paper',
+})
+check(wrongPool.status !== 200 && wrongPool.json?.ok === false, '指定另一个池子的事件被拒绝', `status=${wrongPool.status}`)
 
 console.log('')
 console.log('  注意：事件的抽取池在 apply 时建好一次，所以上面的开关**要重启 dsh 才影响抽取**。')

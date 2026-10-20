@@ -69,18 +69,20 @@ const audioList = JSON.parse(audioRaw.charCodeAt(0) === 0xfeff ? audioRaw.slice(
 const audioTrackCount = Array.isArray(audioList) ? audioList.length : 0
 check(audioTrackCount > 0, '曲库非空（audio 事件才会参与抽取）', `${audioTrackCount} 条`)
 
-/* 单击池共 6 条（弹窗/蓝屏/抽签/冷知识/冷笑话/音频），其中 5 条必然出本地内容。
-   音频随清单非空才参与抽取 —— 所以这里「撞不撞得到」是**随机**的，不能当硬断言。
-   真正要守住的是：万一撞到 audio，它的 `audio` 字段必须是可播放的文件名。 */
+/* 单击池共 6 类（弹窗/蓝屏/抽签/冷知识/冷笑话/音频），全部零 token。
+   这一段跑的是**随机**单击，验的是不变量（不建会话、抽到什么都得是完整 payload），
+   不验「必须抽到某一条」—— 那件事交给下面用指定事件做的正文断言。
+   音频随清单非空才参与抽取，所以万一撞到，它的 `audio` 字段必须是可播放的文件名。 */
 const seen = { joke: 0, trivia: 0, fortune: 0 }
 const textIds = new Set()
-let sawJoke = false
-let sawTrivia = false
 let agentInClick = 0
 let audioInClick = 0
 let audioBad = 0
 
-for (let i = 0; i < 60 && !(sawJoke && sawTrivia); i++) {
+/* 跑固定 40 次，不再「撞到 joke 与 trivia 就停」。原来那样写有个隐患：
+   循环提前退出会让「随机抽样的覆盖面」取决于运气，同一条断言今天跑 3 次、
+   明天跑 60 次，出了问题难以对照。固定次数才是一份可比较的样本。 */
+for (let i = 0; i < 40; i++) {
   const r = await request('POST', '/dsh-lucky-block/roll', H, JSON.stringify({ trigger: 'click' }))
   const j = JSON.parse(r.body)
   const v = j && j.value
@@ -108,46 +110,57 @@ for (let i = 0; i < 60 && !(sawJoke && sawTrivia); i++) {
       v.audio ? `${v.audio.title} → ${v.audio.file}` : '没有 audio 字段')
   }
 
-  if (id === 'joke' && !sawJoke) {
-    const text = String(v.localText || '')
-    check(text.trim().length > 0, 'joke 返回了非空正文', `长度 ${text.length}`)
-    if (text.trim().length > 0) {
-      sawJoke = true
-      /* 正文是「笑话正文」或「笑话正文\n\n—— 点评」。点评是独立随机抽的，
-         所以只比对笑话那一段是否在库里。 */
-      const head = text.split('\n\n')[0].trim()
-      check(
-        knownJokes.has(head) || [...knownJokes].some((k) => head.startsWith(k)),
-        'joke 的正文确实来自本地库（逐条比对）',
-        `前 60 字：${head.slice(0, 60)}`,
-      )
-      console.log(`  joke 预览：${text.slice(0, 100).replace(/\n/g, ' / ')}`)
-    }
-  }
-
-  if (id === 'trivia' && !sawTrivia) {
-    const text = String(v.localText || '').trim()
-    check(text.length > 0, 'trivia 返回了非空正文', `长度 ${text.length}`)
-    if (text.length > 0) {
-      sawTrivia = true
-      /* 一次只给一条（用户反馈三条一起出现字太多）。这里不按行拆，直接整段比对：
-         整段必须等于库里的某一条，这样「悄悄改回三条」会立刻被这条断言拦下 ——
-         三条拼起来永远不等于单条。 */
-      check(knownTrivia.has(text), 'trivia 的正文就是本地库里的某一条（不是拼接）', `前 60 字：${text.slice(0, 60)}`)
-      check(!text.includes('\n'), 'trivia 只给一条（没有换行拼多条）', `实际 ${text.split('\n').length} 行`)
-      check(!/^[·•\-]\s/.test(text), 'trivia 没有列表前缀（不再是多条列表）')
-      console.log(`  trivia 预览：${text.slice(0, 80)}`)
-    }
-  }
+  /* joke / trivia 的正文断言挪到了循环之后（用指定事件，不靠运气）。
+     这里只保留遍历中顺带观察到的计数，供下面打印分布用。 */
 }
 
-check(sawJoke, `60 次单击内撞到 joke（实际 ${seen.joke} 次）`)
-check(sawTrivia, `60 次单击内撞到 trivia（实际 ${seen.trivia} 次）`)
 check(agentInClick === 0, '单击池里没有任何事件建过会话', `${agentInClick} 次违规`)
 check(textIds.size > 0, '至少有一条单击事件返回了文本', `实际 ${JSON.stringify([...textIds])}`)
 check(audioBad === 0, 'audio 事件（若被抽到）必须带回可播放的文件信息', `违规 ${audioBad} 次`)
 if (audioInClick === 0) {
   console.log(`  音频事件 0 次命中（曲库 ${audioTrackCount} 条，撞不到是常态，不算失败）`)
+}
+console.log(`  上面 40 次随机单击里 joke ${seen.joke} 次 / trivia ${seen.trivia} 次 / fortune ${seen.fortune} 次`)
+
+/* 正文断言不再靠上面那 40 次去碰运气。冷知识占 27.5%、笑话占 20.8%，40 次里
+   撞不到的概率虽然很低，但「低」不等于「不会」—— 一旦不中，报出来的错会是
+   「trivia 返回了非空正文」这种像是正文坏了的话，而真实原因只是没抽到。
+   内容形状与抽中概率是两件事，分开验：形状用指定事件，概率用 20 万次离线抽样
+   （见 probe-fortune.mjs 里 drawFortune 的做法）。 */
+async function pickOne(id, trigger = 'click') {
+  const r = await request('POST', '/dsh-lucky-block/roll', H, JSON.stringify({ trigger, event: id }))
+  const parsed = JSON.parse(r.body)
+  return parsed && parsed.value ? parsed.value : null
+}
+
+const jokeValue = await pickOne('joke')
+check(Boolean(jokeValue), '指定 joke 拿得到 value')
+if (jokeValue) {
+  const text = String(jokeValue.localText || '')
+  check(text.trim().length > 0, 'joke 返回了非空正文', `长度 ${text.length}`)
+  /* 正文是「笑话正文」或「笑话正文\n\n—— 点评」。点评是独立随机抽的，
+     所以只比对笑话那一段是否在库里。 */
+  const head = text.split('\n\n')[0].trim()
+  check(
+    knownJokes.has(head) || [...knownJokes].some((k) => head.startsWith(k)),
+    'joke 的正文确实来自本地库（逐条比对）',
+    `前 60 字：${head.slice(0, 60)}`,
+  )
+  console.log(`  joke 预览：${text.slice(0, 100).replace(/\n/g, ' / ')}`)
+}
+
+const triviaValue = await pickOne('trivia')
+check(Boolean(triviaValue), '指定 trivia 拿得到 value')
+if (triviaValue) {
+  const text = String(triviaValue.localText || '').trim()
+  check(text.length > 0, 'trivia 返回了非空正文', `长度 ${text.length}`)
+  /* 一次只给一条（用户反馈三条一起出现字太多）。这里不按行拆，直接整段比对：
+     整段必须等于库里的某一条，这样「悄悄改回三条」会立刻被这条断言拦下 ——
+     三条拼起来永远不等于单条。 */
+  check(knownTrivia.has(text), 'trivia 的正文就是本地库里的某一条（不是拼接）', `前 60 字：${text.slice(0, 60)}`)
+  check(!text.includes('\n'), 'trivia 只给一条（没有换行拼多条）', `实际 ${text.split('\n').length} 行`)
+  check(!/^[·•\-]\s/.test(text), 'trivia 没有列表前缀（不再是多条列表）')
+  console.log(`  trivia 预览：${text.slice(0, 80)}`)
 }
 
 /* 反向：长按池必须**建会话**。只测单击不建会话的话，一个「所有事件都不建会话」
