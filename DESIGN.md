@@ -1042,6 +1042,33 @@ function drawFortune(rand) {
 键盘 Enter/Space 从「直接触发长按」改成「走单击」——
 键盘没有「按住 1.4 秒」这个自然动作，而单击是零成本的，猜错的代价最小。
 
+#### 那条判定必须是白名单，不能是黑名单
+
+早前这四条判定写成了「没记录就放行」：
+
+```js
+var samePointer = !press || !event || press.pointerId === event.pointerId
+var notFired   = !press || press.fired !== true
+var notMoved   = !dragState.current || dragState.current.moved !== true
+```
+
+读起来宽容，实际是把「这一轮按压我们根本没见过」也当成了合格。
+而 `onPointerDown` 首行是 `if (event.button !== 0) return` —— **右键从不登记**，
+所以右键松开时 `press` 是 `null`，三条全真，于是右键既弹出菜单、又抽一次随机事件。
+用户先发现的是这件事（m19957），代码自己不会报错。
+
+现在判定收在一个纯函数 `isClickRelease(event, press, drag)` 里，
+第一条就是 `if (!press) return false`：**只有我们登记过的按压才可能产生单击**。
+`endDrag` 只负责执行它的结论，不再自己拼布尔量。
+
+`event.button` 用 `Number.isFinite(event.button) && event.button !== 0` 而不是直接
+`!== 0`：合成事件可能不带 `button`，那不该被当成右键；
+真的报了 2（右键）或 1（中键）才拒绝。
+
+`tools/click-check.mjs`（22 条）把这一条钉住，其中最重要的一条是
+「右键松开且从未登记 → 不触发（原始 bug 形状）」——
+只测「左键能触发」是不够的，那从来没错过。
+
 ### 14.5 测试上跟着变的地方
 
 `/roll` 的默认 trigger 是 `'hold'`，所以**所有想抽单击池事件的探针都必须显式传

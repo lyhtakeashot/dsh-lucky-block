@@ -499,6 +499,7 @@ npm pack
 `lyrics-check.mjs` 歌词按时间取句的正确性（同样抽源码跑，含预判窗口的两个边界）、
 `konami-check.mjs` 科乐美秘技的状态机（同样抽源码跑：错一步清零、隔太久清零、不抢按键）、
 `pickaxe-check.mjs` 木镐耐久的边界（同样抽源码跑：第 59 下才换镐子、脏数据不会让镐子永新）、
+`click-check.mjs` 单击判定的边界（同样抽源码跑：右键/中键/未登记的按压一律不触发，左键带拖动的也不触发）、
 `config-check.mjs` 配置读取（含 BOM 坑）、
 `local-check.mjs` 本地语料库与分流、
 `events-check.mjs` 事件覆盖层与第三方事件校验（从 `index.js` 抽取源码跑）、

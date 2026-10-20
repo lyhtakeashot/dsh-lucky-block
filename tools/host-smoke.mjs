@@ -1,6 +1,23 @@
 // 用最小假 ctx 跑一遍 apply，尽早暴露宿主侧运行期错误（不依赖真实 DSH）。
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import os from 'node:os'
+import path from 'node:path'
+
+/* 把 $DSH_HOME 指到一个空临时目录再 import 插件。
+ *
+ * 这一行是**必须的**，不是保险。插件的 stateDir() 是
+ * `($DSH_HOME || ~/.dsh)/plugins/dsh-lucky-block`，所以本测试会直接读到
+ * 用户真实的那份 config.json —— 而那份文件里的事件开关是用户自己拨的。
+ * 用户把 bluescreen / popups / trivia / joke 全关掉（只想听歌）之后，
+ * 整个 smoke 会一口气报十几条 FAIL，看起来像代码坏了，其实是被测对象
+ * 换成了用户的设置。
+ *
+ * 单测必须对用户设置免疫：要么在空配置上跑（这里），要么显式构造配置。
+ * 用 os.tmpdir() 下的随机目录，且必须在 import 之前设置 ——
+ * ESM 的 import 会提升到文件顶部，所以这里用 await import() 而不是静态 import。 */
+const sandboxHome = await mkdtemp(path.join(os.tmpdir(), 'dsh-lucky-smoke-'))
+process.env.DSH_HOME = sandboxHome
 
 const mod = await import('../lib/index.js')
 const calls = []
@@ -890,5 +907,10 @@ if (listed) {
   }
   console.log(`list-events 与运行期一致: OK (${listed.length} 个事件)`)
 }
+
+/* 拆掉沙箱目录。放在最后而不是 try/finally 里：本文件前面十几处 process.exit(1)
+   是「立刻停」，包一层 finally 也只能在那些点上少留一个临时目录，
+   而把它们全改成 throw 会让输出顺序变乱。临时目录在 os.tmpdir() 下，系统会清。 */
+await rm(sandboxHome, { recursive: true, force: true }).catch(() => {})
 
 
