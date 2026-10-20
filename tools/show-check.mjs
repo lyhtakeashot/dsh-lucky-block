@@ -132,6 +132,28 @@ checkTrue('音乐把收场函数传给了 playTrack', /playTrack\(value\.audio\.
 checkTrue('没起音轨时立刻收场', /else musicEnd\(\)/.test(source))
 checkTrue('居中播报接了收场', /var textEnd = beginShow\(\)/.test(source))
 checkTrue('居中播报把收场函数传给了 broadcastText', /broadcastText\(value\.localText, 30000, textEnd\)/.test(source))
+/* 动效三兄弟（m19279）。它们比前几类更容易漏接 —— 因为「方块跑掉」「抖一下」
+   看起来都是一瞬间的事，很容易觉得「不用收场吧」。但 beginShow 是按次计数的，
+   开了不收，方块就永远停在「上一场还没收场」的状态里。 */
+checkTrue('动效：方块跑掉接了收场', /var runawayEnd = beginShow\(\)/.test(source))
+checkTrue('动效：方块跑掉把收场传给了 runRunaway', /runRunaway\([\s\S]{0,200}runawayEnd\)/.test(source))
+checkTrue('动效：假光标接了收场', /var cursorEnd = beginShow\(\)/.test(source))
+checkTrue('动效：假光标把收场传给了 runFakeCursor', /runFakeCursor\([\s\S]{0,200}cursorEnd\)/.test(source))
+checkTrue('动效：屏幕抖接了收场', /var shakeEnd = beginShow\(\)/.test(source))
+checkTrue('动效：屏幕抖把收场传给了 runShake', /runShake\([\s\S]{0,160}shakeEnd\)/.test(source))
+/* 三个动效函数自己也要能被 ESC 打断，并且**每条收场路径都要调 onDone**。
+   `finish()` 是它们唯一的出口，所以这里断的是「finish 里有 onDone 且被登记过」。 */
+for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake']) {
+  const re = new RegExp(`function ${fnName}\\([\\s\\S]*?\\n  \\}`)
+  const fnMatch = source.match(re)
+  checkTrue(`动效 ${fnName} 抽得到`, Boolean(fnMatch))
+  if (fnMatch) {
+    const fnBody = fnMatch[0]
+    checkTrue(`动效 ${fnName} 登记了 ESC 收场`, /registerEscape\(finish\)/.test(fnBody))
+    checkTrue(`动效 ${fnName} 收场时调了 onDone`, /typeof onDone === 'function'\) onDone\(\)/.test(fnBody))
+    checkTrue(`动效 ${fnName} 收场时撤了 ESC 登记`, /unregister\(\)/.test(fnBody))
+  }
+}
 
 /* ---- 7. 每一条收场路径都会叫 onDone ---- */
 
@@ -184,8 +206,14 @@ checkTrue(
   /var begun = \[\]/.test(source),
 )
 checkTrue(
-  '四类表演的收场函数都进了 begun',
-  (source.match(/begun\.push\(/g) ?? []).length === 4,
+  /* 断言的是**两者相等**，不是某个写死的数字。
+     原来这里写 `=== 4`（弹窗/蓝屏/音乐/居中播报），加三个动效事件后就成了假红 ——
+     而写死数字的断言在每加一场表演时都会再红一次，红到最后就会被改成
+     「只要大于 0 就行」，那时它已经不验任何东西了。
+     相等关系才是真正要守的：**开出去几场，就必须收回几场**。
+     少收一场 = 出错时那场永远释放不了 = 方块永久锁死。 */
+  '开出的每一场表演都进了 begun（开的场数 == 收的场数）',
+  (source.match(/= beginShow\(\)/g) ?? []).length === (source.match(/begun\.push\(/g) ?? []).length,
 )
 checkTrue(
   'catch 分支会放掉它们',

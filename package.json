@@ -18,6 +18,7 @@
     "lib/jokes.js",
     "lib/jokes-data.json",
     "lib/trivia-data.json",
+    "lib/novel-words.json",
     "lib/audio-tracks.json",
     "lib/audio",
     "lib/lyrics",

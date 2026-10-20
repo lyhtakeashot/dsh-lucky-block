@@ -163,6 +163,51 @@ if (triviaValue) {
   console.log(`  trivia 预览：${text.slice(0, 80)}`)
 }
 
+/* 自述事件（m19279 第二类）：念的必须是**真实累计数字**。
+   它最容易出的错是「念了一个好看但不是真的数」—— 比如写死 1000 次、
+   或者拿 `diceCount` 却漏了「含这一次」的 +1。所以这里不只看它说了话，
+   而是先读 /ping 拿到宿主认的计数，再对比它念出来的数字。 */
+const pedigreeValue = await pickOne('pedigree')
+check(Boolean(pedigreeValue), '指定 pedigree 拿得到 value')
+if (pedigreeValue) {
+  const text = String(pedigreeValue.localText || '').trim()
+  check(text.length > 0, 'pedigree 返回了非空正文', `长度 ${text.length}`)
+  check(!text.includes('\n\n\n'), 'pedigree 没有连续空行（排版塌了）')
+  const pingAfter = await request('GET', '/dsh-lucky-block/ping', H)
+  const pingAfterJson = JSON.parse(pingAfter.body)
+  const counters = (pingAfterJson && pingAfterJson.value && pingAfterJson.value.persona) || {}
+  /* 它念的次数应当是「宿主记的次数」或「记的次数 + 1」——
+     前者是它先读后念（本次还没计数），后者是本次已计。两种都算诚实，
+     唯独**编出来的数**不算。这里刻意不要求精确相等：
+     那会把「先计数还是先念」这个实现顺序当成契约。 */
+  const said = Number((text.match(/你点了我\s*(\d+)\s*次/) || [])[1])
+  const real = Number(counters.clicks)
+  check(Number.isFinite(said), 'pedigree 念了点击次数', `正文：${text.slice(0, 60)}`)
+  if (Number.isFinite(said) && Number.isFinite(real)) {
+    check(
+      said === real || said === real + 1,
+      `pedigree 念的次数是真实计数（念 ${said}，宿主记 ${real}）`,
+      `正文：${text.slice(0, 80)}`,
+    )
+  }
+  console.log(`  pedigree 预览：${text.replace(/\n/g, ' / ').slice(0, 100)}`)
+}
+
+/* 动效三兄弟是 `kind:'visual'` —— 它们**不许**建会话，也不许返回正文。
+   这三条最贵的坏法是「动了但顺手建了个会话」，那等于点一下方块就烧一次 token，
+   而用户只会觉得「怎么又开了个会话」。 */
+for (const effectId of ['runaway', 'fake-cursor', 'shake']) {
+  const rv = await pickOne(effectId)
+  check(Boolean(rv), `指定 ${effectId} 拿得到 value`)
+  if (rv) {
+    check(rv.eventId === effectId, `${effectId} 复现的是它自己（实际 ${rv.eventId}）`)
+    check(!rv.sessionId, `${effectId} 没有建会话（零 token）`, `sessionId=${rv.sessionId}`)
+    check(!rv.localText, `${effectId} 不该带正文（它只表演，不说话）`, String(rv.localText || '').slice(0, 60))
+    check(Boolean(rv.visual) && rv.visual.kind === effectId, `${effectId} 带了自己的 visual spec`, JSON.stringify(rv.visual || null).slice(0, 80))
+    check(Number(rv.visual && rv.visual.durationMs) > 0, `${effectId} 有正的时长`, String(rv.visual && rv.visual.durationMs))
+  }
+}
+
 /* 反向：长按池必须**建会话**。只测单击不建会话的话，一个「所有事件都不建会话」
    的坏实现也能全绿 —— 那样长按就彻底废了，而本探针看不出来。 */
 const hold = await request('POST', '/dsh-lucky-block/roll', H, JSON.stringify({ trigger: 'hold' }))
@@ -171,7 +216,7 @@ const holdValue = holdJson && holdJson.value
 check(Boolean(holdValue), '长按 roll 返回了 value', hold.body.slice(0, 200))
 if (holdValue) {
   check(
-    ['paper', 'news', 'invent'].includes(holdValue.eventId),
+    ['paper', 'news', 'invent', 'novel', 'absurd', 'rebuttal', 'manual'].includes(holdValue.eventId),
     `长按抽到的是 AI 事件（实际 ${holdValue.eventId}）`,
   )
   check(

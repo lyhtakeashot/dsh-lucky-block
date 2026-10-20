@@ -122,15 +122,25 @@ const DONE_MARKERS = {
      一条完全正确的回复（「喷嚏债清算仪 - 问题：… - 原理：… - 副作…」）因此报 FAIL。
      结构词比结论词稳，因为它们出现在最前面。 */
   invent: /发明|名字|副作用|解决|装置|工具|叫|问题|原理|机制|功能/,
+  /* m19279 新增的四条长按事件。同样的道理：标记要贴任务要求的结构，
+     而不是「应该出现的结论词」——
+    · novel 要求写故事，回复里一定有人称、动作或叙事的开头；
+    · absurd 是剧本，几乎必然出现角色名加冒号；
+    · rebuttal 明确要求出现「这个说法有问题」这类转折；
+    · manual 明确要求编号条目与「注意事项」。 */
+  novel: /他|她|说|走|看|问|答|开始|后来|那天|故事/,
+  absurd: /【|「|：|说|问|答|用户|我/,
+  rebuttal: /说法|有问题|漏洞|但其实|站不住|不成立|反驳/,
+  manual: /注意事项|常见问题|第[一二三四五六七八九十1-9]条|使用|步骤|警告/,
 }
 
 let hit = null
 let rolls = 0
 while (rolls < 40 && !hit) {
   const before = listSessionIds()
-  /* trigger: 'hold' —— 只有长按池（paper/news/invent）会建会话。
-     用默认值也行（默认就是 hold），但显式写出来是为了让「这个探针测的是长按池」
-     这件事在代码里可见。 */
+  /* trigger: 'hold' —— 只有长按池（paper / news / invent / novel / absurd /
+     rebuttal / manual）会建会话。用默认值也行（默认就是 hold），
+     但显式写出来是为了让「这个探针测的是长按池」这件事在代码里可见。 */
   const res = await post('/dsh-lucky-block/roll', { trigger: 'hold' })
   rolls += 1
   const value = res.data?.value

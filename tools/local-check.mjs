@@ -171,7 +171,38 @@ for (const entry of LYRICS) {
   )
 }
 
-/* --- 5. 数据目录必须随包发布 ---
+/* --- 5.5. 小说词库 ---
+   「随机短篇小说」的三个关键词由宿主从 `lib/novel-words.json` 抽。
+   词库本身必须是好的：抽到抽象名词（「孤独」「时间」），那篇小说就会写成散文，
+   prompt 里再怎么强调「必须参与情节」也救不回来。
+   所以断言全部落在**词库自身的形状**上，不碰抽取逻辑。 */
+const novelRaw = await readFile(path.join(root, 'lib', 'novel-words.json'), 'utf8').catch(() => null)
+check('novel-words.json 存在', novelRaw !== null)
+let novelWords = []
+if (novelRaw !== null) {
+  try {
+    const parsed = JSON.parse(novelRaw.charCodeAt(0) === 0xfeff ? novelRaw.slice(1) : novelRaw)
+    novelWords = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.words) ? parsed.words : []
+    check('novel-words.json 可解析出词表', novelWords.length > 0, `实际 ${novelWords.length}`)
+  } catch (error) {
+    check('novel-words.json 可解析', false, error.message)
+  }
+}
+check('词表够抽三个', novelWords.length >= 3, `实际 ${novelWords.length}`)
+check('每条都是非空字符串', novelWords.every((w) => typeof w === 'string' && w.trim().length > 0))
+check('没有首尾空白', novelWords.every((w) => w === w.trim()))
+check('没有重复词', new Set(novelWords).size === novelWords.length,
+  `重复 ${novelWords.length - new Set(novelWords).size} 条`)
+/* 抽象词尾：写成「孤独感」「时间性」这类的，抽三个拼在一起也生不出情节。
+   只挡最明显的几个后缀，不做词典 —— 这条断言的目的是「别退化成抽象名词」，
+   不是逐词审校。 */
+const ABSTRACT_RE = /(感|性|主义|状态|意识|概念|本质|意义)$/
+const abstract = novelWords.filter((w) => ABSTRACT_RE.test(w))
+check('没有抽象名词（否则写出来是散文不是小说）', abstract.length === 0, JSON.stringify(abstract.slice(0, 5)))
+check('每条不超过 8 个字', novelWords.every((w) => w.length <= 8),
+  JSON.stringify(novelWords.filter((w) => w.length > 8).slice(0, 5)))
+
+/* --- 6. 数据目录必须随包发布 ---
    `package.json` 的 `files` 是一份白名单：没写进去的目录**不会**进 npm 包。
    加 `lib/lyrics/` 时就是漏了这一条 —— 本地跑得好好的（源码目录里有文件），
    装到别人机器上就变成「每首歌都没歌词」，而且不报错。
@@ -185,6 +216,17 @@ const dataDirs = (await readdir(path.join(root, 'lib'), { withFileTypes: true })
 check('files 清单非空', shipped.size > 0)
 for (const dir of dataDirs) {
   check(`数据目录 ${dir}/ 随包发布`, shipped.has(dir), `package.json 的 files 里没有它`)
+}
+/* 目录之外的**单文件数据**同样会漏（`lib/novel-words.json` 就是这么漏过一次）。
+   判据：`lib/` 根下所有运行时读取的 `.json` 都必须进 files 清单。
+   只筛 `.json` 是刻意的 —— `lib/语料库总览.md` 是给人和 CI 看的人读文档，
+   **故意**不随包发布（它由 tools/build-corpus-overview.mjs 生成，
+   进了包只会让体积变大且永远和语料不同步）。 */
+const libFiles = (await readdir(path.join(root, 'lib'), { withFileTypes: true }))
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+  .map((entry) => `lib/${entry.name}`)
+for (const file of libFiles) {
+  check(`数据文件 ${file} 随包发布`, shipped.has(file), `package.json 的 files 里没有它`)
 }
 
 console.log(`\n${fail === 0 ? 'ALL GREEN' : 'FAILED'} pass=${pass} fail=${fail}`)

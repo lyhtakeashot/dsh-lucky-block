@@ -242,6 +242,8 @@ console.log('  replay: OK')
 console.log('agent events:', JSON.stringify(agentIds))
 console.log('local text events:', JSON.stringify(localIds))
 
+/* 「视觉事件必须有 spec」这条对动效类同样成立，但动效的 spec 里**没有文字**，
+   只有 kind 与时长 —— 所以不能顺手要求它带 lines/count。 */
 if (visualIds.length === 0) {
   console.error('FAIL  没有任何 visual 事件（popups/bluescreen 应该被标为 visual）')
   visualFail += 1
@@ -249,6 +251,14 @@ if (visualIds.length === 0) {
 if (!visualIds.includes('bluescreen') || !visualIds.includes('popups')) {
   console.error('FAIL  bluescreen / popups 应为 visual')
   visualFail += 1
+}
+/* 动效三兄弟必须是 visual：它们不该建会话、不该有正文。
+   抽中一条回来却带 localText 的话，客户端会把它当冷知识显示出来。 */
+for (const id of ['runaway', 'fake-cursor', 'shake']) {
+  if (!visualIds.includes(id)) {
+    console.error(`FAIL  ${id} 应为 visual（它只动一下，不产生内容）`)
+    visualFail += 1
+  }
 }
 if (agentIds.length === 0) {
   console.error('FAIL  没有任何 agent 事件')
@@ -300,13 +310,13 @@ for (const e of evs) {
   }
 }
 /* 具体归属：这些事件必须各自在对的池子里，否则用户的手感就变了。 */
-for (const id of ['paper', 'news', 'invent']) {
+for (const id of ['paper', 'news', 'invent', 'novel', 'absurd', 'rebuttal', 'manual']) {
   if (!holdIds.includes(id)) {
     console.error(`FAIL  ${id} 应在长按池（它要调 AI）`)
     visualFail += 1
   }
 }
-for (const id of ['popups', 'bluescreen', 'fortune']) {
+for (const id of ['popups', 'bluescreen', 'fortune', 'runaway', 'fake-cursor', 'shake', 'pedigree']) {
   if (!clickIds.includes(id)) {
     console.error(`FAIL  ${id} 应在单击池（零 token 本地事件）`)
     visualFail += 1
