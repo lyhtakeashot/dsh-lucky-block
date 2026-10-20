@@ -96,7 +96,7 @@ const doc = [
   '## 二、随机冷知识闲聊（lib/trivia-data.json）',
   '',
   `共 **${trivia.length}** 条（${topicLine}），每条带 topic 与 source。`,
-  '掷骰子时随机抽 3 条一起讲。',
+  '掷骰子时随机抽 1 条讲。',
   '',
   ...triviaSections,
 ].join('\n')

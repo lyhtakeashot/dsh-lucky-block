@@ -126,16 +126,17 @@ for (let i = 0; i < 60 && !(sawJoke && sawTrivia); i++) {
   }
 
   if (id === 'trivia' && !sawTrivia) {
-    const text = String(v.localText || '')
-    check(text.trim().length > 0, 'trivia 返回了非空正文', `长度 ${text.length}`)
-    if (text.trim().length > 0) {
+    const text = String(v.localText || '').trim()
+    check(text.length > 0, 'trivia 返回了非空正文', `长度 ${text.length}`)
+    if (text.length > 0) {
       sawTrivia = true
-      /* trivia 是 3 条以「· 」开头的列表。逐行剥掉前缀后，每行都该在库里。 */
-      const rows = text.split('\n').map((line) => line.replace(/^[·•\-\s]+/, '').trim()).filter(Boolean)
-      check(rows.length > 0, `trivia 至少给了一条（实际 ${rows.length} 条）`)
-      const allKnown = rows.every((row) => knownTrivia.has(row))
-      check(allKnown, 'trivia 的每一条都来自本地库（逐条比对）', allKnown ? '' : `可疑：${rows.find((r) => !knownTrivia.has(r))?.slice(0, 50)}`)
-      console.log(`  trivia 预览：${rows[0]?.slice(0, 80)}`)
+      /* 一次只给一条（用户反馈三条一起出现字太多）。这里不按行拆，直接整段比对：
+         整段必须等于库里的某一条，这样「悄悄改回三条」会立刻被这条断言拦下 ——
+         三条拼起来永远不等于单条。 */
+      check(knownTrivia.has(text), 'trivia 的正文就是本地库里的某一条（不是拼接）', `前 60 字：${text.slice(0, 60)}`)
+      check(!text.includes('\n'), 'trivia 只给一条（没有换行拼多条）', `实际 ${text.split('\n').length} 行`)
+      check(!/^[·•\-]\s/.test(text), 'trivia 没有列表前缀（不再是多条列表）')
+      console.log(`  trivia 预览：${text.slice(0, 80)}`)
     }
   }
 }
