@@ -23,6 +23,7 @@
     "lib/audio",
     "lib/lyrics",
     "lib/sounds",
+    "lib/textures",
     "icon.png",
     "cordis.patch.yml",
     "README.md"

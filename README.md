@@ -247,6 +247,13 @@ TNT / 南瓜 / 自定义图片）、圆角、描边宽度与颜色、投影、�
 `blob:` 在这个缓存域里用不了、`file:` 会被 CSP 拦下来，两种都会让图片裂开。
 「恢复默认」走的和手动改是同一套校验，所以恢复回来的一定是能用的值。
 
+那七种内置图案**都是原版材质**：从 Minecraft 1.20.1 的资源包（
+`assets/minecraft/textures/block/`）里取的 16×16 贴图，一个像素都没改，
+原图留在 `lib/textures/` 里（命令方块的正面原图是 16×64 的四帧动画，取了第一帧）。
+它们被内联成 data URI 随客户端一起发出去 —— 浏览器读不到插件目录，
+而单张 base64 只有三百来个字符。放大后是硬边像素（`image-rendering: pixelated`），
+不是插值出来的一片糊。
+
 外观里还有两个**彩蛋开关**，都在这一块里：
 
 | 开关 | 默认 | 作用 |
@@ -565,6 +572,7 @@ npm pack
 | 素材 | 尺寸 | 来源 |
 | --- | --- | --- |
 | 方块面 | 16×16 | `alexsocha/luckyblock` mod 的 `lucky_block.png` |
+| 圆石 / 原木 / 铁块 / 命令方块 / TNT / 南瓜 | 16×16 ×6 | 原版资源包 `InventivetalentDev/minecraft-assets`（Minecraft 1.20.1）的 `assets/minecraft/textures/block/`：`cobblestone` / `oak_log` / `iron_block` / `command_block_front`（原图 16×64 四帧，取第一帧）/ `tnt_side` / `pumpkin_side`。原图留在 `lib/textures/`，`node tools/texture-check.mjs --emit` 从那里重生成内联表 |
 | 挖掘裂纹 10 帧 | 16×16 ×10 | 原版资源包 `PixiGeko/Minecraft-default-assets` 的 `assets/minecraft/textures/block/destroy_stage_0..9.png` |
 
 裂纹用 `image-rendering: pixelated` 保持硬边，长按时按进度切到下一帧，最后一帧之后碎裂。
@@ -595,8 +603,9 @@ npm pack
 `panel-check.mjs` 设置面板分页与分组的纯函数（从 `client.js` 抽源码跑：两个池不许互相漏、排序按出厂权重所以改数字不跳位、占比分母是本池合计、脏数据不产生 NaN、分组的子行摊成参数也要全部渲染）、
 `zoom-check.mjs` 整页缩放幅度的区间与接线（从 `index.js` 抽源码跑：`0`/`999`/`"abc"` 都被夹回 5~40 而不是让整页消失、两个方向互不影响、配置真的走到了两条事件的 `factor` 里、改完确实会重建事件池）、
 `save-feedback-check.mjs` 保存按钮的三态回执（从 `client.js` 抽 `panelSaveButton` 用假 `h()` 跑：待命 / 保存中禁用压暗 / 已保存绿 / 失败红、两个按钮的回执互不串台、`saving` 在发请求之前点亮、`ok`/`fail` 1.8 秒后回待命）、
-`look-check.mjs` 外观三件事（小字抽句与不重样、万圣节日期与「该显示哪张脸」的八条分支、四张表彼此对得上 —— 白名单 ↔ 图案 ↔ 下拉框 ↔ 材质声音表，外加每个音频文件真的在 `lib/sounds/` 下）、
+`look-check.mjs` 外观三件事（小字抽句与不重样、万圣节日期与「该显示哪张脸」的八条分支、四张表彼此对得上 —— 白名单 ↔ 贴图表 ↔ 下拉框 ↔ 材质声音表，外加每个音频文件真的在 `lib/sounds/` 下）、
 `bluescreen-check.mjs` 蓝屏十张脸的内容质量（从 `index.js` 抽数组跑：表情 / 背景色 / STOP 码 / 首句四者两两不重复，每张四行、必有 STOP 行、末行必留 ESC、必说清 60 秒，表情不许带空格 —— 靠空格区分等于没区分）、
+`texture-check.mjs` 六张原版材质**真解像素**再断言（自己写的最小 PNG 解码器：每张 16×16、圆石是中性灰、原木偏棕且不亮、铁块是亮灰、TNT 有白腰带、南瓜是橙的、六张两两不同），并逐字节比对 `client.js` 里的内联副本与 `lib/textures/` 的原图；带 `--emit` 可从原图重新生成那张表、
 `lyrics-check.mjs` 歌词按时间取句的正确性（同样抽源码跑，含预判窗口的两个边界）、
 `konami-check.mjs` 科乐美秘技的状态机（同样抽源码跑：错一步清零、隔太久清零、不抢按键）、
 `pickaxe-check.mjs` 木镐耐久的边界（同样抽源码跑：第 59 下才换镐子、脏数据不会让镐子永新）、

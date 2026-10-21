@@ -67,7 +67,7 @@ const pieces = [
   grab(/function pickSplash\(rand, pool\) \{[\s\S]*?\n  \}/, 'pickSplash'),
   grab(/function nextSplash\(avoid, rand, pool\) \{[\s\S]*?\n  \}/, 'nextSplash'),
   grab(/function splashPool\(date\) \{[\s\S]*?\n  \}/, 'splashPool'),
-  grab(/var FACE_PATTERNS = \{[\s\S]*?\n  \}/, 'FACE_PATTERNS'),
+  grab(/var FACE_TEXTURES = \{[\s\S]*?\n  \}/, 'FACE_TEXTURES'),
   grab(/var FACE_OPTIONS = \[[\s\S]*?\n  \]/, 'FACE_OPTIONS'),
 ]
 
@@ -75,7 +75,7 @@ const api = new Function(
   pieces.join('\n') +
     '\nreturn { clamp, LOOK_DEFAULTS, LOOK_LIMITS, normalizeLook, isHalloween, holidayFace,' +
     ' SOUND_FILES, MATERIAL_SOUNDS, materialSound, SPLASH_LINES, HALLOWEEN_SPLASH,' +
-    ' pickSplash, nextSplash, splashPool, FACE_PATTERNS, FACE_OPTIONS }',
+    ' pickSplash, nextSplash, splashPool, FACE_TEXTURES, FACE_OPTIONS }',
 )()
 
 const {
@@ -92,7 +92,7 @@ const {
   pickSplash,
   nextSplash,
   splashPool,
-  FACE_PATTERNS,
+  FACE_TEXTURES,
   FACE_OPTIONS,
 } = api
 
@@ -188,32 +188,13 @@ check('下拉框的 id 与白名单逐项一致（顺序也一致）', FACE_OPTI
 check('下拉框每项都有中文名和英文名', FACE_OPTIONS.every((p) => p[1] && p[2]), true)
 check('下拉框的中文名互不重复', new Set(FACE_OPTIONS.map((p) => p[1])).size, FACE_OPTIONS.length)
 
-const PATTERN_FACES = ['cobblestone', 'oak', 'iron', 'command', 'tnt', 'pumpkin']
-check('每个「CSS 现画」的材质都有图案', PATTERN_FACES.filter((f) => !FACE_PATTERNS[f]), [])
-check('图案表里没有白名单外的孤儿', Object.keys(FACE_PATTERNS).filter((f) => LOOK_LIMITS.faces.indexOf(f) < 0), [])
-check('lucky 和 custom 不走图案（一个用内联贴图、一个用用户图片）', [!!FACE_PATTERNS.lucky, !!FACE_PATTERNS.custom], [false, false])
-
-const cobble = FACE_PATTERNS.cobblestone
-const oak = FACE_PATTERNS.oak
-const iron = FACE_PATTERNS.iron
-checkTrue('圆石有底色（不是透明）', Boolean(cobble.backgroundColor || cobble.background))
-check('圆石是可平铺的（有 backgroundSize，不然是一整块纯色）', cobble.backgroundSize, '28px 28px')
-checkTrue('圆石用多个 radial-gradient 拼石头斑点', (cobble.backgroundImage.match(/radial-gradient/g) || []).length >= 4)
-checkTrue('原木是竖纹（repeating-linear-gradient 沿 x 方向重复）', /repeating-linear-gradient\(90deg/.test(oak.backgroundImage))
-checkTrue('原木底色偏棕（r > g > b）', (() => {
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(oak.backgroundColor)
-  if (!m) return false
-  const [r, g, b] = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)]
-  return r > g && g > b
-})())
-checkTrue('铁块是浅灰金属（三通道接近且足够亮）', (() => {
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(iron.backgroundColor)
-  if (!m) return false
-  const rgb = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)]
-  const spread = Math.max(...rgb) - Math.min(...rgb)
-  return spread <= 0x14 && Math.min(...rgb) >= 0xa0
-})())
-checkTrue('铁块有四颗铆钉（四角 radial-gradient）', (iron.backgroundImage.match(/circle at (14|86)% (14|86)%/g) || []).length >= 4)
+const TEXTURED_FACES = ['cobblestone', 'oak', 'iron', 'command', 'tnt', 'pumpkin']
+check('每个「有原版材质」的方块都有一张内联贴图', TEXTURED_FACES.filter((f) => !FACE_TEXTURES[f]), [])
+check('贴图表里没有白名单外的孤儿', Object.keys(FACE_TEXTURES).filter((f) => LOOK_LIMITS.faces.indexOf(f) < 0), [])
+check('lucky 和 custom 不在贴图表里（一个用自己的默认图、一个用用户图片）',
+  [!!FACE_TEXTURES.lucky, !!FACE_TEXTURES.custom], [false, false])
+checkTrue('表里存的是裸 base64（拼成 data URI 的地方只有一处）',
+  Object.values(FACE_TEXTURES).every((v) => typeof v === 'string' && /^[A-Za-z0-9+/=]+$/.test(v)))
 
 console.log('')
 console.log('— 6. 材质 → 声音 —')
@@ -260,7 +241,7 @@ check('白名单外的 face 回退默认', normalizeLook({ face: 'diamond' }).fa
 console.log('')
 console.log('— 8. 接线（抽源码断言，防止只写了一半）—')
 checkTrue('faceFace 走 holidayFace（不是直接读 look.face）', /var face = holidayFace\(look\)/.test(clientSrc))
-checkTrue('图案查找用的是 holidayFace 的结果', /var pattern = FACE_PATTERNS\[face\]/.test(clientSrc))
+checkTrue('取图用的是 holidayFace 的结果', /else if \(FACE_TEXTURES\[face\]\) src = 'data:image\/png;base64,' \+ FACE_TEXTURES\[face\]/.test(clientSrc))
 checkTrue('按下挖掘时把材质传给 startDig', /startDig\(digFace\)/.test(clientSrc))
 checkTrue('挖穿时把材质传给 playBreak', /playBreak\(digFace\)/.test(clientSrc))
 checkTrue('digFace 也过一遍 holidayFace（南瓜那天声音跟着变）', /var digFace = holidayFace\(geometry\.look, new Date\(\)\)/.test(clientSrc))

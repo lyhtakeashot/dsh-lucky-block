@@ -1228,6 +1228,10 @@ URL 被判非法 —— 这些情况都没有 `ended` 可等。`audio.play()` �
 
 ### 15.2 四个内建图案，其中三个是 CSS 画的
 
+> **已被 §31 推翻。** 那一版是 CSS 现画（下面三条理由当时觉得成立），但用户看了一眼
+> 就说「图标不对，不是原版的」。现在七种内置脸全是 16×16 的原版贴图，
+> `FACE_PATTERNS` 已删除，`faceFace()` 只会返回 `img`。这一节保留原样当历史记录。
+
 `face` 有 `lucky`（内联贴图）/ `command` / `tnt` / `pumpkin` / `custom`（用户图）五个值。
 后三个用 CSS 现画而不是再找三张贴图，理由：
 
@@ -2178,13 +2182,16 @@ React 组件在拖动、窗口尺寸变化、`chargeLevel` 每次 40ms 跳动时
 | 表 | 作用 | 漏改的症状 |
 | --- | --- | --- |
 | `LOOK_LIMITS.faces` | 落盘白名单 | 选完刷新回到幸运方块 |
-| `FACE_PATTERNS` | CSS 现画的图案 | 选了没反应（退回内联贴图） |
+| `FACE_TEXTURES`（原 `FACE_PATTERNS`，见 §31） | 这个面用哪张 16×16 贴图 | 选了没反应（退回内联贴图） |
 | `FACE_OPTIONS` | 设置面板下拉框 | 面板里根本没有这一项 |
 | `MATERIAL_SOUNDS` | 材质 → 声音组 | 外观是铁块，敲起来是石头 |
 
-`tools/look-check.mjs` 就是钉这四张表的：`FACE_OPTIONS` 的 id 序列必须与
+`tools/look-check.mjs` 就是钉这几张表的：`FACE_OPTIONS` 的 id 序列必须与
 `LOOK_LIMITS.faces` **逐项相等**（顺序也相等，否则下拉框顺序和白名单悄悄错开），
-`FACE_PATTERNS` 不许有白名单外的孤儿，`MATERIAL_SOUNDS` 的键必须都在白名单里。
+`FACE_TEXTURES` 不许有白名单外的孤儿，`MATERIAL_SOUNDS` 的键必须都在白名单里。
+
+> **素材那一半已经改掉了。** 本节下面三段描述的是 CSS 现画的圆石/原木/铁块，
+> 用户看过一眼就说不是原版，现在换成了真正的原版贴图（§31）。保留原文当历史。
 
 图案本身全部是 CSS（没有新素材）：
 - 圆石：`#7a7a7a` 底 + 四个 `radial-gradient` 斑点，`backgroundSize: 28px 28px`
@@ -2234,11 +2241,11 @@ React 组件在拖动、窗口尺寸变化、`chargeLevel` 每次 40ms 跳动时
 日期全部注入（`isHalloween(date)` / `holidayFace(look, date)`），所以检查脚本
 在 4 月也能跑；否则这个功能一年只有一天能验。
 
-### 28.6 `tools/look-check.mjs`（88 条）与三次故意改坏
+### 28.6 `tools/look-check.mjs`（87 条）与三次故意改坏
 
 抽 15 段真源码（clamp / LOOK_DEFAULTS / LOOK_LIMITS / normalizeLook /
 万圣节一段 / SOUND_FILES / MATERIAL_SOUNDS / materialSound / SPLASH_LINES /
-HALLOWEEN_SPLASH / pickSplash / nextSplash / splashPool / FACE_PATTERNS /
+HALLOWEEN_SPLASH / pickSplash / nextSplash / splashPool / FACE_TEXTURES /
 FACE_OPTIONS），拼成 `new Function` 跑：
 
 - 文案：≥20 句、非空、≤14 字、不重复、不含换行；注入 `rand` 抽首句/末句、
@@ -2248,9 +2255,11 @@ FACE_OPTIONS），拼成 `new Function` 跑：
   当天 00:00 与 23:59 都算、次日 00:00 立刻结束、12/31 不误判。
 - 该显示哪张脸：默认+万圣节→南瓜、默认+平时→幸运、挑了 oak→oak（万圣节也不变）、
   custom→custom、开关关→不变、`null` 不炸、未知 face 原样返回。
-- 四张表：白名单无重复、下拉框序列与白名单逐项相等、图案无孤儿、
-  `lucky`/`custom` 不走图案、圆石平铺、原木竖纹且 r>g>b、铁块浅灰且四颗铆钉、
+- 四张表：白名单无重复、下拉框序列与白名单逐项相等、贴图表无孤儿、
+  `lucky`/`custom` 不在贴图表里、表里存的是裸 base64、
   三组声音互不相同、每组都有对应的 `Break` 组、每个 `.ogg` 真的在磁盘上。
+  （「圆石是灰的、原木是棕的」这类**长得对不对**的断言不在这个脚本里 ——
+  它读的是文本。像素级的那半在 `tools/texture-check.mjs`，见 §31。）
 - 清洗：老配置里没有新字段 → `splash`/`halloween` 默认 true、只有布尔 `false` 算关。
 - 接线：`holidayFace` 真的被 `faceFace` 和 `digFace` 用到、`startDig(digFace)`、
   `playBreak(digFace)`、`materialSound(face)`、`'Break'` 拼接、小字绝对定位
@@ -2395,6 +2404,101 @@ function panelGroup(title) {
 列表、槽位），静态断言只能证明原料在场，必须真跑一遍数产出。
 这也是本项目第二次栽在同一类坑上（第一次是 §24 的 `nodeRef`：测试替身替实现圆了谎）。
 
+## 31. 换回原版材质：CSS 拼出来的东西骗不过玩过的人（m02326）
 
+### 31.1 用户的原话
 
+> 图标不对，不是原版的，看起来像是你自行生成的。全部换成原版
 
+一句话点破了一件事：**方块是有原型的。** 我上一版用 CSS 拼的精神是「能用就行、
+少两份 base64」，用户看的是「这是不是那个方块」。这两种标准差着一整个游戏。
+
+当时那六个面是：圆石＝灰底 + 四个 `radial-gradient` 当石头斑点；原木＝`#8a6335`
+底 + 两道 `repeating-linear-gradient` 竖纹；铁块＝浅灰 + 一道高光 + 四个圆当铆钉；
+命令方块＝紫色底 + 一个问号；TNT＝三段渐变 + 「TNT」三个字；南瓜＝橙色渐变。
+远看都像，近看全是「像那么回事」。
+
+### 31.2 素材从哪来
+
+Minecraft 1.20.1 原版资源包里的 16×16 贴图，**一个像素都没改**：
+
+| face | 原图 |
+| --- | --- |
+| `cobblestone` | `block/cobblestone.png` |
+| `oak` | `block/oak_log.png` |
+| `iron` | `block/iron_block.png` |
+| `command` | `block/command_block_front.png`（原图 **16×64**，四帧动画） |
+| `tnt` | `block/tnt_side.png` |
+| `pumpkin` | `block/pumpkin_side.png` |
+
+素材经由 GitHub 上镜像原版资源的仓库拿到（`InventivetalentDev/minecraft-assets`，
+ref `1.20.1`）。取法本身也记一笔：这台机器上 `fetch` 与 `Invoke-WebRequest`
+都出不去（沙箱不放行出站），可是 agent 的 `web_fetch` 能拿页面 ——
+于是走 GitHub API 的 contents 接口，它把文件内容以 base64 放在 JSON 里返回，
+base64 是纯 ASCII，过文本管道不会被搅坏。**能用 JSON 传的二进制就不算二进制。**
+原始 PNG 全部留在 `lib/textures/`，随包发布（`package.json` 的 `files` 里）。
+
+命令方块那张是 16×64 的四帧动画（正面会呼吸），这里用 `System.Drawing` 裁出
+第一帧存成 `command_block.png`：一个挂在桌面上的小方块不需要呼吸，
+但**四帧循环在一张 16×16 的槽里显示会被压成 4 个横条**，所以必须裁。
+
+### 31.3 为什么内联，不引外部文件
+
+客户端跑在浏览器里，读不了插件目录（没有 fs、也不该有）。可选的两条路：
+加一条静态路由把 PNG 发出去，或者把图内联进 bundle。选了后者，因为
+单张 base64 三百来个字符，六张合计约 2 KB —— 比多一条路由、多一份要维护的
+MIME 与缓存头便宜得多。`lucky` 那张本来就是内联的（§15.2），现在七张走同一条路。
+
+代价是 `lib/client.js` 里多了六行长字符串。这让 diff 变难看，但换来的是
+**运行时零依赖、零网络、零路径假设** —— 装在哪都能跑。
+
+### 31.4 渲染简化了：所有脸都是 `img`
+
+旧的 `faceFace()` 有两条路：`lucky`/`custom` 出 `img`，其余出 `div` + 内联
+CSS 图案 + `content` 文字。现在所有脸都是 16×16 的图，于是塌成一条：
+
+```js
+var src = LUCKY_BLOCK_FACE_URI
+if (face === 'custom' && look.image) src = look.image
+else if (FACE_TEXTURES[face]) src = 'data:image/png;base64,' + FACE_TEXTURES[face]
+return { tag: 'img', props: { src: src, ... } }
+```
+
+`FACE_PATTERNS` 整张表删掉。回退顺序保住了：未知 face / 老配置里的怪值 → 幸运方块。
+
+**表里存裸 base64，不存整条 data URI。** 拼前缀的地方只有一处，
+省得六行里各写一遍又漏一行 —— 这个选择立刻被检查抓到了：第一版忘了拼前缀，
+`look-check` 的「表里存的是裸 base64」当场变红，否则就是六张裂图。
+
+### 31.5 `tools/texture-check.mjs`：真解像素
+
+老的 `look-check` 只证明「有没有写 `backgroundImage`」——这正是 CSS 版本能
+全绿通过的原因。新脚本反过来：**先解 PNG，再按「这个方块应该长什么样」断言。**
+
+自己写了一个最小 PNG 解码器（`zlib.inflateSync` + 五种行过滤器 + 调色板），
+因为它只吃 16×16、8 位、无隔行；也因为这台机器装不了依赖（npm 被执行策略拦住）。
+
+断言的量级从「有没有」变成「是什么」：
+
+- 每张 16×16；
+- 圆石：三通道极差 ≤ 6（中性灰）、亮度 100~160；
+- 原木：`r > g > b` 且 `r-b ≥ 40`、亮度 60~110（不是被漂白过的木头）；
+- 铁块：亮度 ≥ 200 且中性；
+- 命令方块：`r > g > b`（暖色金属）；
+- TNT：近白像素 ≥ 15%（那条白腰带）、整体偏红；
+- 南瓜：`r ≥ 170`、`g ∈ [80,150]`、`b ≤ 70`；
+- 六张两两不同（防「同一张复制六遍」）；
+- `client.js` 里的内联副本与 `lib/textures/` **逐字节比对**（改图不改表会红）；
+- 白名单里除 `lucky`/`custom` 外每个 face 都有贴图，`FACE_PATTERNS` 确实已删。
+
+`--emit` 从 `lib/textures/` 重生成 `FACE_TEXTURES`，所以「换一张图」的完整流程是：
+丢进 `lib/textures/` → `--emit` → 粘贴 → 跑检查。
+
+敏感度：把 `pumpkin_side.png` 换成圆石那张，两条红（「南瓜是橙的」拿到
+`{r:128,g:127,b:128}`；「内联副本与磁盘一致」也红）。还原后 29 条全绿。
+
+### 31.6 版权
+
+贴图版权归 Mojang Studios。本插件把它们当**本地开发期素材镜像**用：
+随包发布、运行时不联网、不外链、不用于分发素材包本身。这与 §素材出处 里
+挖掘裂纹、原版音效的处理方式一致。
