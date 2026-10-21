@@ -25,15 +25,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TEX_DIR = path.join(root, 'lib', 'textures')
 const CLIENT = path.join(root, 'lib', 'client.js')
 
-/* face id → 贴图文件名。命令方块的原始文件是 16×64 四帧动画，
-   lib/textures/ 里留的是裁好的第一帧（见 DESIGN.md §31）。 */
+/* face id → 贴图文件名。两张不是 16×16 一帧的原图：
+   命令方块是 16×64 四帧动画，留裁好的第一帧；南瓜用 carved_pumpkin
+   （脸上有刻出来的眼睛和嘴），不是 pumpkin_side（那是没刻过的侧面）。
+   两者的处理方式见 DESIGN.md §31。 */
 const FILES = {
   cobblestone: 'cobblestone.png',
   oak: 'oak_log.png',
   iron: 'iron_block.png',
   command: 'command_block.png',
   tnt: 'tnt_side.png',
-  pumpkin: 'pumpkin_side.png',
+  pumpkin: 'pumpkin.png',
 }
 
 let pass = 0
@@ -163,6 +165,21 @@ export function colorStats(img) {
   }
 }
 
+/** 亮度低于阈值的像素占比（透明像素不算）。用来认「刻出来的脸」：
+    那张脸上有一片近黑色的眼睛和嘴，侧面皮上则一处暗部都没有。 */
+export function darkRatio(img, threshold) {
+  const n = img.width * img.height
+  let dark = 0
+  let count = 0
+  for (let i = 0; i < n; i += 1) {
+    if (img.pixels[i * 4 + 3] < 8) continue
+    const v = 0.299 * img.pixels[i * 4] + 0.587 * img.pixels[i * 4 + 1] + 0.114 * img.pixels[i * 4 + 2]
+    count += 1
+    if (v < threshold) dark += 1
+  }
+  return count === 0 ? 0 : Math.round((dark / count) * 1000) / 1000
+}
+
 /* ---------- --emit：从磁盘重生成 client.js 那张表 ---------- */
 
 const clientSrc = fs.readFileSync(CLIENT, 'utf8')
@@ -207,9 +224,16 @@ checkTrue('铁块是亮灰（亮度 ≥ 200 且三通道几乎相等）',
 checkTrue('命令方块是暖色金属（r > g > b）', stats.command.r > stats.command.g && stats.command.g > stats.command.b, JSON.stringify(stats.command))
 checkTrue('TNT 有白腰带（近白像素 ≥ 15%）', stats.tnt.whiteRatio >= 0.15, 'whiteRatio=' + stats.tnt.whiteRatio)
 checkTrue('TNT 整体偏红（r 比 b 高 40 以上）', stats.tnt.r - stats.tnt.b >= 40, 'r-b=' + (stats.tnt.r - stats.tnt.b))
-checkTrue('南瓜是橙的（r ≥ 170，g 在 80~150，b ≤ 70）',
-  stats.pumpkin.r >= 170 && stats.pumpkin.g >= 80 && stats.pumpkin.g <= 150 && stats.pumpkin.b <= 70,
+checkTrue('南瓜是橙的（r ≥ 140，g 在 70~120，b ≤ 40）',
+  stats.pumpkin.r >= 140 && stats.pumpkin.g >= 70 && stats.pumpkin.g <= 120 && stats.pumpkin.b <= 40,
   JSON.stringify(stats.pumpkin))
+/* 正面南瓜（carved_pumpkin）和侧面的南瓜皮最能区分的一点就是那张脸：
+   刻出来的眼睛和嘴是近黑色的一整片，占三成左右像素；侧面皮上一个暗像素都没有
+   （实测最暗 75/255）。所以这条断言真的在替用户检查「换的是不是有脸的那张」，
+   而不是在查「橙不橙」—— 两张都是橙的。 */
+const pumpkinDark = darkRatio(images.pumpkin, 60)
+checkTrue('南瓜有刻出来的脸（亮度 < 60 的像素 ≥ 15%，侧面皮是 0）',
+  pumpkinDark >= 0.15, 'darkRatio=' + pumpkinDark)
 checkTrue('六张图两两不同（不是同一张复制了六遍）', (() => {
   const keys = Object.entries(images).map(([face, img]) => face + ':' + img.pixels.toString('base64'))
   return new Set(keys).size === keys.length

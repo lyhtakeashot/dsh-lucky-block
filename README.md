@@ -572,7 +572,7 @@ npm pack
 | 素材 | 尺寸 | 来源 |
 | --- | --- | --- |
 | 方块面 | 16×16 | `alexsocha/luckyblock` mod 的 `lucky_block.png` |
-| 圆石 / 原木 / 铁块 / 命令方块 / TNT / 南瓜 | 16×16 ×6 | 原版资源包 `InventivetalentDev/minecraft-assets`（Minecraft 1.20.1）的 `assets/minecraft/textures/block/`：`cobblestone` / `oak_log` / `iron_block` / `command_block_front`（原图 16×64 四帧，取第一帧）/ `tnt_side` / `pumpkin_side`。原图留在 `lib/textures/`，`node tools/texture-check.mjs --emit` 从那里重生成内联表 |
+| 圆石 / 原木 / 铁块 / 命令方块 / TNT / 南瓜 | 16×16 ×6 | 原版资源包 `InventivetalentDev/minecraft-assets`（Minecraft 1.20.1）的 `assets/minecraft/textures/block/`：`cobblestone` / `oak_log` / `iron_block` / `command_block_front`（原图 16×64 四帧，取第一帧）/ `tnt_side` / `carved_pumpkin`（有脸的那张，不是 `pumpkin_side`）。原图留在 `lib/textures/`，`node tools/texture-check.mjs --emit` 从那里重生成内联表 |
 | 挖掘裂纹 10 帧 | 16×16 ×10 | 原版资源包 `PixiGeko/Minecraft-default-assets` 的 `assets/minecraft/textures/block/destroy_stage_0..9.png` |
 
 裂纹用 `image-rendering: pixelated` 保持硬边，长按时按进度切到下一帧，最后一帧之后碎裂。
