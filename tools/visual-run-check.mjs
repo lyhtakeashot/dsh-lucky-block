@@ -67,6 +67,9 @@ const pieces = [
   grab(/function runFalseAlarm\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runFalseAlarm'),
   grab(/function runTableFlip\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runTableFlip'),
   grab(/function runButterFingers\(block, durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runButterFingers'),
+  grab(/function runRave\(durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runRave'),
+  grab(/function runZoom\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runZoom'),
+  grab(/function runLowGravity\(block, durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runLowGravity'),
 ]
 
 /* ---------- 假 DOM：只实现这三个函数用到的那一小块 ---------- */
@@ -88,6 +91,13 @@ function makeEl(tag) {
       delete el.style[name]
     },
   }
+  /* 浏览器里「没设过的内联属性」读出来是**空串**，假 DOM 里是 undefined。
+     这个差别专门坑「记下原值、收场再还回去」的动效（runZoom 记 zoom 与
+     pointer-events）：还原成 undefined 之后，`style.zoom` 读到的不是 ''，
+     而真机上它确实是 ''。照浏览器来，不照 JS 来。 */
+  ;['zoom', 'pointerEvents', 'animationDuration', 'transition', 'opacity'].forEach((name) => {
+    el.style[name] = ''
+  })
   /* `cssText` 必须**真的解析**成一条条属性。代码是先整块写 `style.cssText = '...'`
      再单独改某一项的（`layer.style.opacity = '1'`），如果这里只是存一个字符串，
      那条 `opacity` 就永远读回 undefined —— 测试会在「实现完全正确」时报错。 */
@@ -229,25 +239,34 @@ function makeClock() {
 function session() {
   const document = makeDocument()
   const clock = makeClock()
+  /* `nodeRef` 是组件作用域里的那个 ref，runZoom 会直接读 `nodeRef.current`。
+     抽出来的函数体在 `new Function` 里跑，所以得把它当参数递进去 ——
+     而它必须是**同一个对象**，测试才能先 `ref.current = block` 再开演。 */
+  const ref = { current: null }
   const body = `${pieces.join('\n')}
 return {
   runBlackout: runBlackout,
   runFalseAlarm: runFalseAlarm,
   runTableFlip: runTableFlip,
   runButterFingers: runButterFingers,
+  runRave: runRave,
+  runZoom: runZoom,
+  runLowGravity: runLowGravity,
+  nodeRef: nodeRef,
   pressEscape: function () {
     onEscapeKey({ key: 'Escape', preventDefault: function () {}, stopPropagation: function () {} })
   },
   finisherCount: function () { return escFinishers.length },
 }`
   const root = { addEventListener: () => {}, removeEventListener: () => {} }
-  const api = new Function('root', 'document', 'window', 't', body)(
+  const api = new Function('root', 'document', 'window', 't', 'nodeRef', body)(
     root,
     document,
     { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
     (zh) => zh,
+    ref,
   )
-  return { api, document, clock }
+  return { api, document, clock, ref }
 }
 
 const layerOf = (document) => document.body.children[document.body.children.length - 1]
@@ -437,18 +456,180 @@ console.log('— 黄油手 —')
   check('没有节点：屏幕上也没多东西', document.body.children.length, 0)
 }
 
-/* ================= 5. 四个都能被 ESC 掐断，且只报一次收场 ================= */
+/* ================= 5. 彩虹 ================= */
 
-console.log('— ESC 掐断（四个动效逐个）—')
+console.log('— 彩虹 —')
+{
+  const { api, document, clock } = session()
+  let done = 0
+  api.runRave(4200, () => {
+    done += 1
+  })
+
+  check('盖了一层全屏', document.body.children.length, 1)
+  const layer = layerOf(document)
+  check('渐变与动画都在 class 里（层自己承担混合）', layer.className, 'dsh-lucky-rave')
+  checkTrue('z-index 是 100004（在方块 100010 之下，方块不被染色）', /z-index:100004/.test(layer.style.cssText))
+  checkTrue('不挡点击（它只调色，不演「现在不能操作」）', /pointer-events:none/.test(layer.style.cssText))
+  checkTrue('混合落在层自己身上（底下什么都不用动）', /mix-blend-mode:overlay/.test(layer.style.cssText))
+  check('起手透明（否则颜色是硬闪进来的）', layer.style.opacity, '0')
+
+  clock.advance(30)
+  check('30ms 后推到目标不透明度', layer.style.opacity, '0.34')
+
+  clock.advance(4200 - 340 - 30)
+  check('收场前先把不透明度压回去（颜色不该硬切）', layer.style.opacity, '0')
+  check('压回去的这一刻层还在（还要走完那段过渡）', document.body.children.length, 1)
+
+  clock.advance(340)
+  check('自然结束：层被删干净', document.body.children.length, 0)
+  check('自然结束：onDone 只响一次', done, 1)
+  check('自然结束：ESC 登记表清空', api.finisherCount(), 0)
+  check('自然结束：没有残留定时器', clock.pending(), 0)
+}
+
+/* ================= 6. 缩水 / 巨人（同一个 runZoom，两个方向） ================= */
+
+console.log('— 缩水 / 巨人 —')
+{
+  const { api, document, clock, ref } = session()
+  const block = document.createElement('div')
+  ref.current = block
+  let done = 0
+  api.runZoom({ factor: 0.85, durationMs: 3000 }, () => {
+    done += 1
+  })
+
+  check('整页缩到 85%', document.documentElement.style.zoom, '0.85')
+  check('缩放期间方块不许被拖（坐标系变了，拖一下就把坐标写歪）', block.style.pointerEvents, 'none')
+
+  clock.advance(3000)
+  check('收场：zoom 还回去（否则整页永远停在 85%）', document.documentElement.style.zoom, '')
+  check('收场：方块的可点性也还回去', block.style.pointerEvents, '')
+  check('收场：onDone 只响一次', done, 1)
+  check('收场：ESC 登记表清空', api.finisherCount(), 0)
+  check('收场：没有残留定时器', clock.pending(), 0)
+}
+{
+  const { api, document, clock, ref } = session()
+  ref.current = document.createElement('div')
+  let done = 0
+  api.runZoom({ factor: 1.15, durationMs: 3000 }, () => {
+    done += 1
+  })
+  check('巨人：同一个函数，factor 说放大就放大', document.documentElement.style.zoom, '1.15')
+  clock.advance(3000)
+  check('巨人：收场后也还回去', document.documentElement.style.zoom, '')
+  check('巨人：onDone 只响一次', done, 1)
+}
+{
+  /* 宿主或别的插件可能已经设过 zoom。收场必须还它**原来的那个值**，
+     不是一律清成空串 —— 清空会把别人的设置一起吃掉。 */
+  const { api, document, clock, ref } = session()
+  ref.current = document.createElement('div')
+  document.documentElement.style.zoom = '0.9'
+  api.runZoom({ factor: 0.85, durationMs: 3000 }, () => {})
+  check('原有 zoom 被暂时覆盖', document.documentElement.style.zoom, '0.85')
+  clock.advance(3000)
+  check('收场：还原成原来那个 0.9，不是清空', document.documentElement.style.zoom, '0.9')
+}
+{
+  /* 兜底：spec 是宿主给的，一个坏数字能把整页缩到看不见。
+     夹在 0.6~1.6 之后，最坏情况只是「缩了一下」而不是「界面没了」。 */
+  const { api, document, clock, ref } = session()
+  ref.current = document.createElement('div')
+  api.runZoom({ factor: 0, durationMs: 1000 }, () => {})
+  check('factor=0：兜底成 1（不是缩小 100%）', document.documentElement.style.zoom, '1')
+  clock.advance(1000)
+  api.runZoom({ factor: 9, durationMs: 1000 }, () => {})
+  check('factor=9：夹到上限 1.6', document.documentElement.style.zoom, '1.6')
+  clock.advance(1000)
+  api.runZoom({ factor: 0.1, durationMs: 1000 }, () => {})
+  check('factor=0.1：夹到下限 0.6（再小就看不见了）', document.documentElement.style.zoom, '0.6')
+  clock.advance(1000)
+  api.runZoom(null, () => {})
+  check('spec 整个缺失：不缩（factor 回落成 1）', document.documentElement.style.zoom, '1')
+  check('spec 缺失时用的也是默认时长，不会立刻收场', api.finisherCount(), 1)
+}
+{
+  /* 拿不到 documentElement 这种事不该发生，但「当场收场」永远比「锁死」好。 */
+  const document = makeDocument()
+  document.documentElement = null
+  const clock = makeClock()
+  const ref = { current: null }
+  const body = `${pieces.join('\n')}
+return { runZoom: runZoom, finisherCount: function () { return escFinishers.length } }`
+  const api = new Function('root', 'document', 'window', 't', 'nodeRef', body)(
+    { addEventListener: () => {}, removeEventListener: () => {} },
+    document,
+    { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
+    (zh) => zh,
+    ref,
+  )
+  let done = 0
+  api.runZoom({ factor: 0.85, durationMs: 3000 }, () => {
+    done += 1
+  })
+  check('没有 documentElement：当场收场', done, 1)
+  check('没有 documentElement：一个定时器都不挂', clock.pending(), 0)
+}
+
+/* ================= 7. 低重力 ================= */
+
+console.log('— 低重力 —')
+{
+  const { api, document, clock } = session()
+  const block = document.createElement('div')
+  block.classList.add('dsh-lucky-someone')
+  let done = 0
+  api.runLowGravity(block, 3400, () => {
+    done += 1
+  })
+
+  check('方块挂上了低重力动画', block.classList.contains('dsh-lucky-low-gravity'), true)
+  check('时长写进 inline animation-duration（class 里那条只是默认值）', block.style.animationDuration, '3400ms')
+  check('方块原有的 class 没被动过', block.classList.contains('dsh-lucky-someone'), true)
+  check('低重力期间没有任何全屏层（它只动方块）', document.body.children.length, 0)
+
+  clock.advance(3399)
+  check('到点之前还在飘', block.classList.contains('dsh-lucky-low-gravity'), true)
+
+  clock.advance(1)
+  check('收场：动画类摘掉', block.classList.contains('dsh-lucky-low-gravity'), false)
+  check('收场：inline 时长也收回（否则下一次会沿用这次的时长）', block.style.animationDuration, '')
+  check('收场：onDone 只响一次', done, 1)
+  check('收场：ESC 登记表清空', api.finisherCount(), 0)
+  check('收场：没有残留定时器', clock.pending(), 0)
+}
+{
+  const { api, document, clock } = session()
+  let done = 0
+  api.runLowGravity(null, 3400, () => {
+    done += 1
+  })
+  check('没有节点：当场收场', done, 1)
+  check('没有节点：登记表里不留悬着的收场函数', api.finisherCount(), 0)
+  check('没有节点：一个定时器都没挂', clock.pending(), 0)
+  check('没有节点：屏幕上也没多东西', document.body.children.length, 0)
+}
+
+/* ================= 8. 七个都能被 ESC 掐断，且只报一次收场 ================= */
+
+console.log('— ESC 掐断（七个动效逐个）—')
 const STARTERS = {
   停电: (api, onDone) => api.runBlackout(8000, onDone),
   假警报: (api, onDone) => api.runFalseAlarm({ durationMs: 5200, suspenseMs: 2600, suspense: '甲', payoff: '乙' }, onDone),
   掀桌: (api, onDone) => api.runTableFlip({ durationMs: 4800, flip: 'A', unflip: 'B' }, onDone),
   黄油手: (api, onDone, ctx) => api.runButterFingers(ctx.block, 1600, onDone),
+  彩虹: (api, onDone) => api.runRave(4200, onDone),
+  缩水: (api, onDone) => api.runZoom({ factor: 0.85, durationMs: 3000 }, onDone),
+  低重力: (api, onDone, ctx) => api.runLowGravity(ctx.block, 3400, onDone),
 }
 for (const [name, start] of Object.entries(STARTERS)) {
-  const { api, document, clock } = session()
+  const { api, document, clock, ref } = session()
   const block = document.createElement('div')
+  /* runZoom 读的是 nodeRef.current，所以「同一个 ref」必须在开演前就位。 */
+  ref.current = block
   let done = 0
   start(
     api,
@@ -468,6 +649,10 @@ for (const [name, start] of Object.entries(STARTERS)) {
   /* 中断在半路时最容易留下的残骸：方块还藏在「正在掉」的状态里。
      那不会有任何报错，只会让方块从屏幕上消失，直到刷新。 */
   check(`${name}：ESC 后方块没被留在不可见状态`, block.classList.contains('dsh-lucky-butter-hidden'), false)
+  /* 第二种残骸（m00793 新增）：整页还停在缩放状态里、或者方块还挂着飘的动画。
+     这两种都比「看不见方块」更难发现 —— 用户会以为是自己按到了什么。 */
+  check(`${name}：ESC 后整页没被留在缩放状态`, document.documentElement.style.zoom, '')
+  check(`${name}：ESC 后方块没被留在动画状态`, block.classList.contains('dsh-lucky-low-gravity') || block.style.animationDuration === '', true)
 
   api.pressEscape()
   check(`${name}：再按一次 ESC 不会再报一次收场`, done, 1)

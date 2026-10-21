@@ -153,12 +153,20 @@ checkTrue('动效：掀桌接了收场', /var flipEnd = beginShow\(\)/.test(sour
 checkTrue('动效：掀桌把收场传给了 runTableFlip', /runTableFlip\([\s\S]{0,160}flipEnd\)/.test(source))
 checkTrue('动效：黄油手接了收场', /var butterEnd = beginShow\(\)/.test(source))
 checkTrue('动效：黄油手把收场传给了 runButterFingers', /runButterFingers\([\s\S]{0,160}butterEnd\)/.test(source))
+/* 第三轮动效（m00793：彩虹 / 缩水 / 巨人 / 低重力）—— 四个事件、三个函数
+   （缩水和巨人共用 runZoom，方向由 spec.factor 决定）。 */
+checkTrue('动效：彩虹接了收场', /var raveEnd = beginShow\(\)/.test(source))
+checkTrue('动效：彩虹把收场传给了 runRave', /runRave\([\s\S]{0,160}raveEnd\)/.test(source))
+checkTrue('动效：缩放接了收场', /var zoomEnd = beginShow\(\)/.test(source))
+checkTrue('动效：缩放把收场传给了 runZoom', /runZoom\([\s\S]{0,160}zoomEnd\)/.test(source))
+checkTrue('动效：低重力接了收场', /var gravityEnd = beginShow\(\)/.test(source))
+checkTrue('动效：低重力把收场传给了 runLowGravity', /runLowGravity\([\s\S]{0,160}gravityEnd\)/.test(source))
 /* 停电会盖住整个屏幕，所以它必须**吃掉**点击（pointer-events:auto）。
    放点击穿透过去的话，用户会在看不见的界面上点到真的会后悔的按钮。 */
 checkTrue('停电吃掉了点击（不是 click-through）', /function runBlackout\([\s\S]{0,600}'pointer-events:auto'/.test(source))
 /* 三个动效函数自己也要能被 ESC 打断，并且**每条收场路径都要调 onDone**。
    `finish()` 是它们唯一的出口，所以这里断的是「finish 里有 onDone 且被登记过」。 */
-for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 'runFalseAlarm', 'runTableFlip', 'runButterFingers']) {
+for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 'runFalseAlarm', 'runTableFlip', 'runButterFingers', 'runRave', 'runZoom', 'runLowGravity']) {
   const re = new RegExp(`function ${fnName}\\([\\s\\S]*?\\n  \\}`)
   const fnMatch = source.match(re)
   checkTrue(`动效 ${fnName} 抽得到`, Boolean(fnMatch))
@@ -180,6 +188,8 @@ const ANIMATION_PAIRS = [
   ['dsh-lucky-flip-out', 'dshLuckyFlipOut'],
   ['dsh-lucky-unflip-in', 'dshLuckyUnflipIn'],
   ['dsh-lucky-butter-back', 'dshLuckyButterBack'],
+  ['dsh-lucky-rave', 'dshLuckyRave'],
+  ['dsh-lucky-low-gravity', 'dshLuckyLowGravity'],
 ]
 for (const [cls, keyframes] of ANIMATION_PAIRS) {
   checkTrue(`${cls} 有对应的 @keyframes ${keyframes}`, source.includes(`@keyframes ${keyframes}{`))
@@ -203,6 +213,17 @@ checkTrue(
   '没有任何动效给 body / documentElement 直接挂 transform 或 filter',
   !/(body|documentElement)\.style\.(transform|filter|willChange|perspective)\s*=/.test(source),
 )
+/* 缩水 / 巨人是这条红线唯一的**合法出口**：`zoom` 不在会重建包含块的
+   属性列表里（它改的是布局尺度，fixed 后代跟着一起缩，正是要的画面）。
+   所以这里正面钉住它 —— 将来谁把它「优化」成 transform: scale()，
+   这条会红，而上面那条红线也会红。 */
+checkTrue('缩水 / 巨人走 zoom 而不是 transform（zoom 不重建包含块）', /root\.style\.zoom = String\(factor\)/.test(source))
+/* 彩虹的覆盖层必须**穿透点击**。它演的只是「世界换了颜色」，
+   不是「现在不能操作」（那是停电的活）。挡住点击就变成另一件事了。 */
+checkTrue('彩虹的覆盖层不挡点击', /function runRave\([\s\S]{0,1200}'pointer-events:none'/.test(source))
+/* 低重力必须走 `translate` 而不是 `transform`：方块的 transform 正被忙闲态
+   和弹回动画占着，写 transform 会把它们顶掉（而 find 不出来 —— 只是不动）。 */
+checkTrue('低重力用 translate 属性而不是 transform', /@keyframes dshLuckyLowGravity\{[^}]*translate:/.test(source))
 
 /* ---- 7. 每一条收场路径都会叫 onDone ---- */
 

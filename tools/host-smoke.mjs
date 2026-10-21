@@ -269,9 +269,10 @@ if (!visualIds.includes('bluescreen') || !visualIds.includes('popups')) {
   console.error('FAIL  bluescreen / popups 应为 visual')
   visualFail += 1
 }
-/* 动效六兄弟（m00160 从三个加到六个）同样的道理：它们只在屏幕上做一件事，
-   不建会话、不产生正文。抽中一条回来却带 localText 的话，客户端会把它当冷知识显示。 */
-for (const id of ['runaway', 'fake-cursor', 'shake', 'blackout', 'false-alarm', 'table-flip']) {
+/* 动效兄弟（m00160 从三个加到六个，m00576 加手滑，m00793 再补四个整页动效）
+   同样的道理：它们只在屏幕上做一件事，不建会话、不产生正文。
+   抽中一条回来却带 localText 的话，客户端会把它当冷知识显示。 */
+for (const id of ['runaway', 'fake-cursor', 'shake', 'blackout', 'false-alarm', 'table-flip', 'butter-fingers', 'rave', 'shrink', 'giant', 'low-gravity']) {
   if (!visualIds.includes(id)) {
     console.error(`FAIL  ${id} 应为 visual（它只动一下，不产生内容）`)
     visualFail += 1
@@ -308,6 +309,13 @@ const NEW_VISUAL_FIELDS = {
   blackout: ['durationMs'],
   'false-alarm': ['durationMs', 'suspenseMs', 'suspense', 'payoff'],
   'table-flip': ['durationMs', 'flip', 'unflip'],
+  'butter-fingers': ['durationMs'],
+  /* 四个整页动效（m00793）。缩水/巨人是同一个 kind 的两个方向，
+     方向由 factor 决定 —— 少了它，客户端只能按 1 倍「缩」一次，什么都没发生。 */
+  rave: ['durationMs'],
+  shrink: ['durationMs', 'factor'],
+  giant: ['durationMs', 'factor'],
+  'low-gravity': ['durationMs'],
 }
 for (const [id, fields] of Object.entries(NEW_VISUAL_FIELDS)) {
   const spec = visualById.get(id)?.visualSpec
@@ -330,7 +338,7 @@ if (!(Number(visualById.get('blackout')?.visualSpec?.durationMs) >= 5000)) {
   console.error('FAIL  blackout 太短，看不出是停电（只会像闪了一下）')
   visualFail += 1
 }
-for (const id of ['false-alarm', 'table-flip']) {
+for (const id of ['false-alarm', 'table-flip', 'butter-fingers', 'rave', 'shrink', 'giant', 'low-gravity']) {
   const ms = Number(visualById.get(id)?.visualSpec?.durationMs)
   if (!(ms > 0 && ms <= 6000)) {
     console.error(`FAIL  ${id} 的时长 ${ms} 超出 0~6000ms（动效一长就变成「卡住了」）`)
@@ -347,6 +355,22 @@ if (alarmSpec) {
   }
   if (!(Number(alarmSpec.durationMs) - Number(alarmSpec.suspenseMs) >= 600)) {
     console.error('FAIL  false-alarm 给「没有东西」留的时间不够，用户还没看清就结束了')
+    visualFail += 1
+  }
+}
+/* 缩水 / 巨人的方向就写在 factor 上，所以它不是「一个可选字段」，而是**这个事件的
+   全部内容**：写错方向（缩水给 1.15）用户只会看见「放大了一下」，事件的意义就反了。
+   同时夹住区间 —— 0.5 以下整页没法用，1.6 以上按钮会被挤出视口。 */
+for (const [id, want] of [['shrink', 'less'], ['giant', 'more']]) {
+  const factor = Number(visualById.get(id)?.visualSpec?.factor)
+  if (!(factor >= 0.6 && factor <= 1.6)) {
+    console.error(`FAIL  ${id} 的 factor=${factor} 超出 0.6~1.6（再往外整页就没法用了）`)
+    visualFail += 1
+  } else if (want === 'less' && !(factor < 1)) {
+    console.error(`FAIL  shrink 的 factor=${factor} 不是缩小`)
+    visualFail += 1
+  } else if (want === 'more' && !(factor > 1)) {
+    console.error(`FAIL  giant 的 factor=${factor} 不是放大`)
     visualFail += 1
   }
 }
