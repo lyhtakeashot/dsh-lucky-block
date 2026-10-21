@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>整页特效的包含块体检（幸运方块 / m00576）</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        font: 13px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: #14141a;
+        color: #e8e8f0;
+      }
+      #content {
+        padding: 16px 16px 80vh;
+        max-width: 680px;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 10px;
+      }
+      p {
+        margin: 0 0 10px;
+        color: #b9b9c8;
+      }
+      /* 被观测的「固定探针」。它模拟本插件的方块 / dsh 的浮层：
+         position:fixed，应该永远黏在视口左上角，滚页面也不动。 */
+      #probe {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 84px;
+        height: 84px;
+        box-sizing: border-box;
+        border: 2px solid #ffe066;
+        background: rgba(255, 224, 102, 0.18);
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        z-index: 100010;
+      }
+      #panel {
+        position: fixed;
+        right: 12px;
+        top: 12px;
+        width: 340px;
+        max-height: 92vh;
+        overflow: auto;
+        background: #1d1d26;
+        border: 1px solid #34344a;
+        border-radius: 10px;
+        padding: 12px;
+        z-index: 100020;
+      }
+      button {
+        font: inherit;
+        color: #e8e8f0;
+        background: #2b2b3a;
+        border: 1px solid #45455e;
+        border-radius: 6px;
+        padding: 4px 8px;
+        margin: 0 4px 6px 0;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #35354a;
+      }
+      button.on {
+        background: #2f5d3a;
+        border-color: #4f9d63;
+      }
+      .row {
+        margin: 0 0 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        background: #22222d;
+      }
+      .row b {
+        font-weight: 600;
+      }
+      .ok {
+        color: #7fd88f;
+      }
+      .bad {
+        color: #ff8f8f;
+      }
+      .note {
+        color: #9a9aae;
+        font-size: 12px;
+        margin: 2px 0 0;
+      }
+      #readout {
+        font-family: Consolas, monospace;
+        font-size: 11px;
+        color: #9ad;
+        white-space: pre-wrap;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="probe">固定探针<br />（应该永远在左上角）</div>
+
+    <div id="panel">
+      <b>整页特效：包含块体检</b>
+      <p class="note">
+        黄框是 <code>position:fixed</code> 探针，模拟 dsh 的浮层和幸运方块。
+        先往下滚一点，再逐个点按钮：<b>探针一旦离开左上角，就说明这条特效不能做</b>。
+      </p>
+      <div id="buttons"></div>
+      <div id="readout"></div>
+      <p class="note" style="margin-top: 8px">
+        规则：<code>transform</code> / <code>filter</code> / <code>perspective</code> /
+        <code>backdrop-filter</code> / <code>will-change</code> 挂在 body 上，
+        会给所有 fixed 后代重建包含块；<code>zoom</code> 不会。
+      </p>
+    </div>
+
+    <div id="content">
+      <h1>往下滚，然后点右边的按钮</h1>
+      <p>
+        这块内容只是为了能滚动。真正重要的是那个黄色探针 —— 它锚在视口左上角，
+        正常情况下无论怎么滚都一动不动。
+      </p>
+      <p>
+        如果某条特效打开后探针变了大小、翻了角度、或者跟着页面跑掉了，
+        说明这条特效在 dsh 里会把方块和浮层一起带歪。
+      </p>
+      <p>
+        同理，本插件的方块一旦错位，拖拽保存的坐标和用户看到的位置就对不上，
+        下次打开会「跳」一下 —— 那是真 bug，不是玩笑。
+      </p>
+      <p>（下面留了足够长的空白，让你能滚到很远的地方再回来验证。）</p>
+    </div>
+
+    <script>
+      var CASES = [
+        {
+          name: '① body { transform: scale(.8) }',
+          hint: '直觉版「缩水 / 巨人」',
+          on: function () {
+            document.body.style.transform = 'scale(.8)'
+            document.body.style.transformOrigin = '0 0'
+          },
+          off: function () {
+            document.body.style.transform = ''
+            document.body.style.transformOrigin = ''
+          },
+        },
+        {
+          name: '② body { filter: hue-rotate(90deg) }',
+          hint: '直觉版「彩虹 Rave」',
+          on: function () {
+            document.body.style.filter = 'hue-rotate(90deg)'
+          },
+          off: function () {
+            document.body.style.filter = ''
+          },
+        },
+        {
+          name: '③ documentElement.style.zoom = .8',
+          hint: '推荐的「缩水 / 巨人」',
+          on: function () {
+            document.documentElement.style.zoom = '0.8'
+          },
+          off: function () {
+            document.documentElement.style.zoom = ''
+          },
+        },
+        {
+          name: '④ 动画：body 抖动（纯平移）',
+          hint: '现有事件，已上线',
+          on: function () {
+            document.body.style.animation = 'none'
+            /* 重新触发同一条动画 */
+            void document.body.offsetWidth
+            document.body.style.animation = 'demoShake 900ms ease'
+          },
+          off: function () {
+            document.body.style.animation = ''
+          },
+        },
+        {
+          name: '⑤ 覆盖层 + mix-blend-mode',
+          hint: '推荐的「彩虹 Rave」',
+          on: function () {
+            var layer = document.createElement('div')
+            layer.id = 'blendLayer'
+            layer.style.cssText =
+              'position:fixed;inset:0;pointer-events:none;z-index:100004;' +
+              'mix-blend-mode:overlay;' +
+              'background:linear-gradient(90deg,#f0f,#0ff,#ff0,#f0f)'
+            document.body.appendChild(layer)
+          },
+          off: function () {
+            var layer = document.getElementById('blendLayer')
+            if (layer) layer.parentNode.removeChild(layer)
+          },
+        },
+      ]
+
+      var style = document.createElement('style')
+      style.textContent = '@keyframes demoShake{0%{transform:translate3d(0,0,0)}25%{transform:translate3d(-7px,3px,0)}50%{transform:translate3d(6px,-4px,0)}75%{transform:translate3d(-3px,2px,0)}100%{transform:translate3d(0,0,0)}}'
+      document.head.appendChild(style)
+
+      var probe = document.getElementById('probe')
+      var readout = document.getElementById('readout')
+      var buttons = document.getElementById('buttons')
+      var active = new Array(CASES.length)
+      var base = null
+
+      function rectOf(el) {
+        var r = el.getBoundingClientRect()
+        return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
+      }
+
+      function measure() {
+        var now = rectOf(probe)
+        var lines = []
+        lines.push('视口      ' + window.innerWidth + ' × ' + window.innerHeight + '   滚动 ' + Math.round(window.scrollY) + 'px')
+        lines.push('基准      left ' + base.l + '  top ' + base.t + '  宽高 ' + base.w + ' × ' + base.h)
+        lines.push('当前      left ' + now.l + '  top ' + now.t + '  宽高 ' + now.w + ' × ' + now.h)
+        var moved = now.l !== base.l || now.t !== base.t
+        var scaled = now.w !== base.w || now.h !== base.h
+        if (!moved && !scaled) lines.push('结论      探针纹丝不动 —— fixed 语义完好')
+        else {
+          lines.push('结论      探针动了 —— 这条写法在 dsh 里会把方块和浮层一起带歪')
+          if (moved) lines.push('          位移 ' + (now.l - base.l) + ', ' + (now.t - base.t) + ' px')
+          if (scaled) lines.push('          尺寸被缩放 ' + (now.w - base.w) + ' × ' + (now.h - base.h) + ' px')
+        }
+        readout.textContent = lines.join('\n')
+        return { moved: moved, scaled: scaled }
+      }
+
+      function refresh() {
+        var result = measure()
+        for (var i = 0; i < CASES.length; i += 1) {
+          var row = document.getElementById('row' + i)
+          if (!row) continue
+          var mark = row.querySelector('.mark')
+          var test = document.getElementById('case' + i)
+          if (!active[i]) {
+            mark.textContent = '未开'
+            mark.className = 'mark note'
+            if (test) test.className = ''
+            continue
+          }
+          var onlyThis = active.filter(Boolean).length === 1
+          if (!onlyThis) {
+            mark.textContent = '叠着开的，看不出归谁'
+            mark.className = 'mark note'
+          } else if (result.moved || result.scaled) {
+            mark.textContent = '✗ 探针动了'
+            mark.className = 'mark bad'
+          } else {
+            mark.textContent = '✓ 探针没动'
+            mark.className = 'mark ok'
+          }
+          if (test) test.className = 'on'
+        }
+      }
+
+      CASES.forEach(function (item, index) {
+        var row = document.createElement('div')
+        row.className = 'row'
+        row.id = 'row' + index
+        var btn = document.createElement('button')
+        btn.id = 'case' + index
+        btn.textContent = item.name
+        btn.onclick = function () {
+          if (active[index]) {
+            item.off()
+            active[index] = false
+          } else {
+            item.on()
+            active[index] = true
+          }
+          refresh()
+          setTimeout(refresh, 950)
+        }
+        var mark = document.createElement('span')
+        mark.className = 'mark note'
+        mark.textContent = '未开'
+        row.appendChild(btn)
+        row.appendChild(mark)
+        var hint = document.createElement('p')
+        hint.className = 'note'
+        hint.textContent = item.hint
+        row.appendChild(hint)
+        buttons.appendChild(row)
+      })
+
+      /* 基准必须在**什么都没开**的时候取，而且取的是滚动之后的位置 ——
+         滚动本身就是第一条要排除的干扰项。 */
+      window.addEventListener('scroll', measure, { passive: true })
+      window.addEventListener('load', function () {
+        base = rectOf(probe)
+        measure()
+      })
+      base = rectOf(probe)
+      measure()
+    </script>
+  </body>
+</html>

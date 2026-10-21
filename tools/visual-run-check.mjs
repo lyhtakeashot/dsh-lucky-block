@@ -66,6 +66,7 @@ const pieces = [
   grab(/function runBlackout\(durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runBlackout'),
   grab(/function runFalseAlarm\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runFalseAlarm'),
   grab(/function runTableFlip\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runTableFlip'),
+  grab(/function runButterFingers\(block, durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runButterFingers'),
 ]
 
 /* ---------- 假 DOM：只实现这三个函数用到的那一小块 ---------- */
@@ -155,6 +156,25 @@ function makeEl(tag) {
   }
   el.addEventListener = () => {}
   el.removeEventListener = () => {}
+  /* 黄油手要用到这两样：复制品的按屏幕坐标重定位依赖 `getBoundingClientRect()`，
+     掉下去的正是 `cloneNode(true)` 的产物。假 DOM 里也必须**真的**复制一份，
+     否则「掉的是复制品、原节点只是藏起来」这条最要紧的断言就测不出来。 */
+  el.rect = { left: 0, top: 0, width: 48, height: 48 }
+  el.getBoundingClientRect = () => ({ ...el.rect })
+  el.cloneNode = function (deep) {
+    const copy = makeEl(el.tagName)
+    copy.style.cssText = el.style.cssText
+    /* 真实 DOM 上 cssText 和逐条属性是同一份数据，假 DOM 里不是：
+       逐条设置的属性（React 就是这么设的）不会进 cssText，所以两边都抄。 */
+    Object.keys(el.style).forEach((name) => {
+      if (name === 'setProperty' || name === 'removeProperty' || name === 'cssText') return
+      copy.style[name] = el.style[name]
+    })
+    copy.className = el.className
+    copy.textContent = el.textContent
+    if (deep) el.children.forEach((child) => copy.appendChild(child.cloneNode(true)))
+    return copy
+  }
   return el
 }
 
@@ -214,6 +234,7 @@ return {
   runBlackout: runBlackout,
   runFalseAlarm: runFalseAlarm,
   runTableFlip: runTableFlip,
+  runButterFingers: runButterFingers,
   pressEscape: function () {
     onEscapeKey({ key: 'Escape', preventDefault: function () {}, stopPropagation: function () {} })
   },
@@ -346,20 +367,96 @@ console.log('— 掀桌 —')
   check('收场：没有残留定时器', clock.pending(), 0)
 }
 
-/* ================= 4. 三个都能被 ESC 掐断，且只报一次收场 ================= */
+/* ================= 4. 黄油手 ================= */
 
-console.log('— ESC 掐断（三个动效逐个）—')
+console.log('— 黄油手 —')
+{
+  const { api, document, clock } = session()
+  const block = document.createElement('div')
+  block.className = 'dsh-lucky-someone'
+  /* 方块不是一张图，是一棵带贴图/裂纹的子树 —— 复制品要做到「看起来还是同一块」，
+     靠的就是这个深拷贝。这里放一个子节点来钉住这件事。 */
+  const face = document.createElement('div')
+  face.textContent = '面'
+  block.appendChild(face)
+  block.rect = { left: 300, top: 200, width: 48, height: 48 }
+
+  let done = 0
+  api.runButterFingers(block, 1600, () => {
+    done += 1
+  })
+
+  const fallMs = Math.round(1600 * 0.56)
+  const bounceMs = Math.round(1600 * 0.26)
+
+  check('屏幕里多了一个复制品', document.body.children.length, 1)
+  const clone = document.body.children[0]
+  check('复制品是深拷贝（贴图子树跟着一起掉）', clone.children.length, 1)
+  check('复制品的子节点也是原样', clone.children[0] && clone.children[0].textContent, '面')
+  check('复制品按屏幕坐标落位（拖到一半时 geometry 和实际位置并不一致）', clone.style.left, '300px')
+  check('复制品同样是 fixed', clone.style.position, 'fixed')
+  check('复制品不挡鼠标（掉下去的东西不该接住点击）', clone.style.pointerEvents, 'none')
+  check('复制品在方块本体（100010）之下', clone.style.zIndex, '100004')
+  checkTrue('复制品挂了掉落动画（带 forwards）', /dshLuckyButterFall 896ms/.test(clone.style.animation) && /forwards/.test(clone.style.animation))
+  check('原节点被藏起来了', block.classList.contains('dsh-lucky-butter-hidden'), true)
+  check('被藏的只是原节点，复制品没被连带藏掉', clone.classList.contains('dsh-lucky-butter-hidden'), false)
+  check('原节点的其他 class 没被动过', block.classList.contains('dsh-lucky-someone'), true)
+
+  clock.advance(fallMs - 1)
+  check('掉完之前原节点还藏着（早一帧接回来就能看见两个方块）', block.classList.contains('dsh-lucky-butter-hidden'), true)
+
+  clock.advance(1)
+  check('掉完：复制品删干净', document.body.children.length, 0)
+  check('掉完：原节点接回来', block.classList.contains('dsh-lucky-butter-hidden'), false)
+  check('掉完：开始弹（这一下就是「捡起来」的全部表演）', block.classList.contains('dsh-lucky-butter-back'), true)
+  check('弹的时候还没报收场（这一下也算演出）', done, 0)
+
+  clock.advance(bounceMs - 1)
+  check('弹完前一毫秒：动画类还在', block.classList.contains('dsh-lucky-butter-back'), true)
+
+  clock.advance(1)
+  check('弹完：动画类必须摘掉（`both` 会把 scale 钉在方块上，之后拖拽会叠着它）', block.classList.contains('dsh-lucky-butter-back'), false)
+
+  clock.advance(1600 - fallMs - bounceMs)
+  check('收场：onDone 只响一次', done, 1)
+  check('收场：ESC 登记表清空', api.finisherCount(), 0)
+  check('收场：没有残留定时器', clock.pending(), 0)
+}
+
+/* 兜底：拿不到方块节点（组件正在卸载，或 ref 还没挂上）。
+   这条比演出本身重要 —— 挂一个永不执行的收场函数会把方块锁死到刷新为止。 */
+{
+  const { api, document, clock } = session()
+  let done = 0
+  api.runButterFingers(null, 1600, () => {
+    done += 1
+  })
+  check('没有节点：当场收场', done, 1)
+  check('没有节点：登记表里不留悬着的收场函数', api.finisherCount(), 0)
+  check('没有节点：一个定时器都没挂', clock.pending(), 0)
+  check('没有节点：屏幕上也没多东西', document.body.children.length, 0)
+}
+
+/* ================= 5. 四个都能被 ESC 掐断，且只报一次收场 ================= */
+
+console.log('— ESC 掐断（四个动效逐个）—')
 const STARTERS = {
   停电: (api, onDone) => api.runBlackout(8000, onDone),
   假警报: (api, onDone) => api.runFalseAlarm({ durationMs: 5200, suspenseMs: 2600, suspense: '甲', payoff: '乙' }, onDone),
   掀桌: (api, onDone) => api.runTableFlip({ durationMs: 4800, flip: 'A', unflip: 'B' }, onDone),
+  黄油手: (api, onDone, ctx) => api.runButterFingers(ctx.block, 1600, onDone),
 }
 for (const [name, start] of Object.entries(STARTERS)) {
   const { api, document, clock } = session()
+  const block = document.createElement('div')
   let done = 0
-  start(api, () => {
-    done += 1
-  })
+  start(
+    api,
+    () => {
+      done += 1
+    },
+    { block },
+  )
   clock.advance(200)
   check(`${name}：演出中 ESC 登记表里有一条`, api.finisherCount(), 1)
 
@@ -368,6 +465,9 @@ for (const [name, start] of Object.entries(STARTERS)) {
   check(`${name}：ESC 也算自然收场（onDone 响一次）`, done, 1)
   check(`${name}：ESC 后定时器全撤（不会隔几秒再往空元素上写字）`, clock.pending(), 0)
   check(`${name}：ESC 后登记表清空`, api.finisherCount(), 0)
+  /* 中断在半路时最容易留下的残骸：方块还藏在「正在掉」的状态里。
+     那不会有任何报错，只会让方块从屏幕上消失，直到刷新。 */
+  check(`${name}：ESC 后方块没被留在不可见状态`, block.classList.contains('dsh-lucky-butter-hidden'), false)
 
   api.pressEscape()
   check(`${name}：再按一次 ESC 不会再报一次收场`, done, 1)

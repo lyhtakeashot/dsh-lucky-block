@@ -151,12 +151,14 @@ checkTrue('动效：假警报接了收场', /var alarmEnd = beginShow\(\)/.test(
 checkTrue('动效：假警报把收场传给了 runFalseAlarm', /runFalseAlarm\([\s\S]{0,160}alarmEnd\)/.test(source))
 checkTrue('动效：掀桌接了收场', /var flipEnd = beginShow\(\)/.test(source))
 checkTrue('动效：掀桌把收场传给了 runTableFlip', /runTableFlip\([\s\S]{0,160}flipEnd\)/.test(source))
+checkTrue('动效：黄油手接了收场', /var butterEnd = beginShow\(\)/.test(source))
+checkTrue('动效：黄油手把收场传给了 runButterFingers', /runButterFingers\([\s\S]{0,160}butterEnd\)/.test(source))
 /* 停电会盖住整个屏幕，所以它必须**吃掉**点击（pointer-events:auto）。
    放点击穿透过去的话，用户会在看不见的界面上点到真的会后悔的按钮。 */
 checkTrue('停电吃掉了点击（不是 click-through）', /function runBlackout\([\s\S]{0,600}'pointer-events:auto'/.test(source))
 /* 三个动效函数自己也要能被 ESC 打断，并且**每条收场路径都要调 onDone**。
    `finish()` 是它们唯一的出口，所以这里断的是「finish 里有 onDone 且被登记过」。 */
-for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 'runFalseAlarm', 'runTableFlip']) {
+for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 'runFalseAlarm', 'runTableFlip', 'runButterFingers']) {
   const re = new RegExp(`function ${fnName}\\([\\s\\S]*?\\n  \\}`)
   const fnMatch = source.match(re)
   checkTrue(`动效 ${fnName} 抽得到`, Boolean(fnMatch))
@@ -177,6 +179,7 @@ const ANIMATION_PAIRS = [
   ['dsh-lucky-flip-in', 'dshLuckyFlipIn'],
   ['dsh-lucky-flip-out', 'dshLuckyFlipOut'],
   ['dsh-lucky-unflip-in', 'dshLuckyUnflipIn'],
+  ['dsh-lucky-butter-back', 'dshLuckyButterBack'],
 ]
 for (const [cls, keyframes] of ANIMATION_PAIRS) {
   checkTrue(`${cls} 有对应的 @keyframes ${keyframes}`, source.includes(`@keyframes ${keyframes}{`))
@@ -185,6 +188,21 @@ for (const [cls, keyframes] of ANIMATION_PAIRS) {
 /* 假警报那颗跳动的圆点走 inline style（`animation:` 写在 cssText 里），
    不走 class —— 所以它验证的是名字本身。 */
 checkTrue('假警报的圆点用了 dshLuckyAlarmDot', source.includes('dshLuckyAlarmDot'))
+/* 黄油手：掉下去的是**复制品**（走 inline animation，没有 class），
+   原节点靠一个 class 藏起来 —— 三件事必须各自成立：
+   有那组 keyframes、复制品真的挂上了它、藏原节点走的是 class（能被 finish 摘掉）。 */
+checkTrue('黄油手有 @keyframes dshLuckyButterFall', source.includes('@keyframes dshLuckyButterFall{'))
+checkTrue('黄油手的复制品挂上了 dshLuckyButterFall', source.includes('dshLuckyButterFall ${fallMs}ms'))
+checkTrue('黄油手用 class 藏原节点（不是 inline style）', /classList\.add\('dsh-lucky-butter-hidden'\)/.test(source))
+/* 包含块红线（m00576 的第二个结论）：整页级的 transform / filter 一旦挂到
+   body 或 documentElement 上，所有 position:fixed 的后代都会改以它为包含块 ——
+   缩水、彩虹这类「整页特效」全都踩在这里，而它只在缩放/旋转时才会显形。
+   这条断言守的是「以后也别忘了」。已知的例外是 body 抖动：
+   它走 class + translate3d keyframes，是纯平移，不做包含块缩放，且结尾归零。 */
+checkTrue(
+  '没有任何动效给 body / documentElement 直接挂 transform 或 filter',
+  !/(body|documentElement)\.style\.(transform|filter|willChange|perspective)\s*=/.test(source),
+)
 
 /* ---- 7. 每一条收场路径都会叫 onDone ---- */
 
