@@ -195,6 +195,22 @@ for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 
     checkTrue(`动效 ${fnName} 收场时撤了 ESC 登记`, /unregister\(\)/.test(fnBody))
   }
 }
+/* 模块作用域的函数不许读组件作用域的变量（m01307）。
+   `runZoom` 曾经写了 `var block = nodeRef.current`：`nodeRef` 是组件里的
+   `useRef`，模块作用域根本没有这个名字 —— 真机一抽到缩水/变大就
+   `方块启动失败（shrink）：nodeRef is not defined`。
+   visual-run-check 当时没抓到，因为它把 `nodeRef` 当参数注进了 `new Function`，
+   替实现圆了那个谎。两边都堵上：这里做静态守卫，那边不再注入。 */
+console.log('-- 动效函数不越界读组件变量 --')
+const COMPONENT_SCOPE =
+  /\b(nodeRef|showRef|soundRef|quipTimer|lyricTimer|broadcastFinish|broadcastEscape|broadcastTimer|setError|setBusy|setQuip|setCenterText|beginShow|startLyricPoll|broadcastText|say)\b/
+for (const fnName of ['runBluescreen', 'runPopupShow', 'runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 'runFalseAlarm', 'runTableFlip', 'runButterFingers', 'runRave', 'runZoom', 'runLowGravity']) {
+  const fnMatch = source.match(new RegExp(`function ${fnName}\\([\\s\\S]*?\\n  \\}`))
+  if (!fnMatch) continue
+  const hit = COMPONENT_SCOPE.exec(fnMatch[0])
+  checkTrue(`动效 ${fnName} 只吃参数、不读组件变量${hit ? `（发现 ${hit[1]}）` : ''}`, !hit)
+}
+
 /* 每一个挂上去的动画类都必须有对应的 @keyframes。少一条不会报错 ——
    元素只是不动，而且只在抽中那条事件的那 0.3 秒里「什么都没发生」，
    是最难复现、也最容易被当成「这次随机到了静默事件」的一类 bug。 */

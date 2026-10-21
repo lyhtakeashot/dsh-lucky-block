@@ -543,7 +543,7 @@ npm pack
 `persona-check.mjs` 人格层单测（真 import）、
 `snap-check.mjs` 吸附纯函数（从 `client.js` 抽源码跑，不会与实现漂移）、
 `escape-check.mjs` ESC 收尾登记表（同样抽源码跑）、
-`show-check.mjs` 同一时刻只播一场表演的计数与四类收场接线（同样抽源码跑）、
+`show-check.mjs` 同一时刻只播一场表演的计数与四类收场接线（同样抽源码跑），并且逐个扫 12 个动效函数体，**不许读组件作用域的变量**（`nodeRef` 这类名字在模块里不存在，读了就是一抽到就报「方块启动失败」的 ReferenceError）、
 `visual-run-check.mjs` 停电 / 假警报 / 掀桌 / 手滑 / 彩虹 / 缩水 / 变大 / 低重力八个动效的**真执行**验证（假 DOM + 假定时器按时间线推到每个检查点；收场漏删层、漏 `unregister`、漏 `clearTimeout`、把方块留在「藏起来」或「正在飘」的状态里、把整页留在缩放状态里，都会红）、
 `panel-check.mjs` 设置面板分页的纯函数（从 `client.js` 抽源码跑：两个池不许互相漏、排序按出厂权重所以改数字不跳位、占比分母是本池合计、脏数据不产生 NaN）、
 `bluescreen-check.mjs` 蓝屏十张脸的内容质量（从 `index.js` 抽数组跑：表情 / 背景色 / STOP 码 / 首句四者两两不重复，每张四行、必有 STOP 行、末行必留 ESC、必说清 60 秒，表情不许带空格 —— 靠空格区分等于没区分）、

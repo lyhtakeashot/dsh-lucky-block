@@ -68,7 +68,7 @@ const pieces = [
   grab(/function runTableFlip\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runTableFlip'),
   grab(/function runButterFingers\(block, durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runButterFingers'),
   grab(/function runRave\(durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runRave'),
-  grab(/function runZoom\(visual, onDone\) \{[\s\S]*?\n  \}/, 'runZoom'),
+  grab(/function runZoom\(visual, block, onDone\) \{[\s\S]*?\n  \}/, 'runZoom'),
   grab(/function runLowGravity\(block, durationMs, onDone\) \{[\s\S]*?\n  \}/, 'runLowGravity'),
 ]
 
@@ -239,10 +239,11 @@ function makeClock() {
 function session() {
   const document = makeDocument()
   const clock = makeClock()
-  /* `nodeRef` 是组件作用域里的那个 ref，runZoom 会直接读 `nodeRef.current`。
-     抽出来的函数体在 `new Function` 里跑，所以得把它当参数递进去 ——
-     而它必须是**同一个对象**，测试才能先 `ref.current = block` 再开演。 */
-  const ref = { current: null }
+  /* 这里**故意不提供 `nodeRef`**。它曾经是作为参数注进来的（因为 runZoom
+     当初直接读了 `nodeRef.current`），结果真机上 `runZoom` 在模块作用域里
+     根本没有 `nodeRef`，一演就 ReferenceError —— 而检查全绿，因为它把那个
+     不存在的变量替用户补上了。测试替身不许替实现圆谎：
+     模块作用域的函数要吃节点就吃参数（m01307）。 */
   const body = `${pieces.join('\n')}
 return {
   runBlackout: runBlackout,
@@ -252,21 +253,19 @@ return {
   runRave: runRave,
   runZoom: runZoom,
   runLowGravity: runLowGravity,
-  nodeRef: nodeRef,
   pressEscape: function () {
     onEscapeKey({ key: 'Escape', preventDefault: function () {}, stopPropagation: function () {} })
   },
   finisherCount: function () { return escFinishers.length },
 }`
   const root = { addEventListener: () => {}, removeEventListener: () => {} }
-  const api = new Function('root', 'document', 'window', 't', 'nodeRef', body)(
+  const api = new Function('root', 'document', 'window', 't', body)(
     root,
     document,
     { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
     (zh) => zh,
-    ref,
   )
-  return { api, document, clock, ref }
+  return { api, document, clock }
 }
 
 const layerOf = (document) => document.body.children[document.body.children.length - 1]
@@ -492,11 +491,10 @@ console.log('— 彩虹 —')
 
 console.log('— 缩水 / 巨人 —')
 {
-  const { api, document, clock, ref } = session()
+  const { api, document, clock } = session()
   const block = document.createElement('div')
-  ref.current = block
   let done = 0
-  api.runZoom({ factor: 0.85, durationMs: 3000 }, () => {
+  api.runZoom({ factor: 0.85, durationMs: 3000 }, block, () => {
     done += 1
   })
 
@@ -511,10 +509,9 @@ console.log('— 缩水 / 巨人 —')
   check('收场：没有残留定时器', clock.pending(), 0)
 }
 {
-  const { api, document, clock, ref } = session()
-  ref.current = document.createElement('div')
+  const { api, document, clock } = session()
   let done = 0
-  api.runZoom({ factor: 1.15, durationMs: 3000 }, () => {
+  api.runZoom({ factor: 1.15, durationMs: 3000 }, document.createElement('div'), () => {
     done += 1
   })
   check('巨人：同一个函数，factor 说放大就放大', document.documentElement.style.zoom, '1.15')
@@ -525,10 +522,9 @@ console.log('— 缩水 / 巨人 —')
 {
   /* 宿主或别的插件可能已经设过 zoom。收场必须还它**原来的那个值**，
      不是一律清成空串 —— 清空会把别人的设置一起吃掉。 */
-  const { api, document, clock, ref } = session()
-  ref.current = document.createElement('div')
+  const { api, document, clock } = session()
   document.documentElement.style.zoom = '0.9'
-  api.runZoom({ factor: 0.85, durationMs: 3000 }, () => {})
+  api.runZoom({ factor: 0.85, durationMs: 3000 }, document.createElement('div'), () => {})
   check('原有 zoom 被暂时覆盖', document.documentElement.style.zoom, '0.85')
   clock.advance(3000)
   check('收场：还原成原来那个 0.9，不是清空', document.documentElement.style.zoom, '0.9')
@@ -536,18 +532,18 @@ console.log('— 缩水 / 巨人 —')
 {
   /* 兜底：spec 是宿主给的，一个坏数字能把整页缩到看不见。
      夹在 0.6~1.6 之后，最坏情况只是「缩了一下」而不是「界面没了」。 */
-  const { api, document, clock, ref } = session()
-  ref.current = document.createElement('div')
-  api.runZoom({ factor: 0, durationMs: 1000 }, () => {})
+  const { api, document, clock } = session()
+  const block = document.createElement('div')
+  api.runZoom({ factor: 0, durationMs: 1000 }, block, () => {})
   check('factor=0：兜底成 1（不是缩小 100%）', document.documentElement.style.zoom, '1')
   clock.advance(1000)
-  api.runZoom({ factor: 9, durationMs: 1000 }, () => {})
+  api.runZoom({ factor: 9, durationMs: 1000 }, block, () => {})
   check('factor=9：夹到上限 1.6', document.documentElement.style.zoom, '1.6')
   clock.advance(1000)
-  api.runZoom({ factor: 0.1, durationMs: 1000 }, () => {})
+  api.runZoom({ factor: 0.1, durationMs: 1000 }, block, () => {})
   check('factor=0.1：夹到下限 0.6（再小就看不见了）', document.documentElement.style.zoom, '0.6')
   clock.advance(1000)
-  api.runZoom(null, () => {})
+  api.runZoom(null, block, () => {})
   check('spec 整个缺失：不缩（factor 回落成 1）', document.documentElement.style.zoom, '1')
   check('spec 缺失时用的也是默认时长，不会立刻收场', api.finisherCount(), 1)
 }
@@ -556,18 +552,16 @@ console.log('— 缩水 / 巨人 —')
   const document = makeDocument()
   document.documentElement = null
   const clock = makeClock()
-  const ref = { current: null }
   const body = `${pieces.join('\n')}
 return { runZoom: runZoom, finisherCount: function () { return escFinishers.length } }`
-  const api = new Function('root', 'document', 'window', 't', 'nodeRef', body)(
+  const api = new Function('root', 'document', 'window', 't', body)(
     { addEventListener: () => {}, removeEventListener: () => {} },
     document,
     { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
     (zh) => zh,
-    ref,
   )
   let done = 0
-  api.runZoom({ factor: 0.85, durationMs: 3000 }, () => {
+  api.runZoom({ factor: 0.85, durationMs: 3000 }, document.createElement('div'), () => {
     done += 1
   })
   check('没有 documentElement：当场收场', done, 1)
@@ -622,14 +616,12 @@ const STARTERS = {
   掀桌: (api, onDone) => api.runTableFlip({ durationMs: 4800, flip: 'A', unflip: 'B' }, onDone),
   黄油手: (api, onDone, ctx) => api.runButterFingers(ctx.block, 1600, onDone),
   彩虹: (api, onDone) => api.runRave(4200, onDone),
-  缩水: (api, onDone) => api.runZoom({ factor: 0.85, durationMs: 3000 }, onDone),
+  缩水: (api, onDone, ctx) => api.runZoom({ factor: 0.85, durationMs: 3000 }, ctx.block, onDone),
   低重力: (api, onDone, ctx) => api.runLowGravity(ctx.block, 3400, onDone),
 }
 for (const [name, start] of Object.entries(STARTERS)) {
-  const { api, document, clock, ref } = session()
+  const { api, document, clock } = session()
   const block = document.createElement('div')
-  /* runZoom 读的是 nodeRef.current，所以「同一个 ref」必须在开演前就位。 */
-  ref.current = block
   let done = 0
   start(
     api,

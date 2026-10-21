@@ -1893,6 +1893,68 @@ Node 里是 `undefined`。`runZoom` 是「记下原值再还原」的写法，
 `makeEl` 因此按浏览器语义把 `zoom / pointerEvents / animationDuration /
 transition / opacity` 预置成 `''`（照浏览器来，不照 JS 来）。
 
+## 24. 真机 bug：`nodeRef is not defined`（m01307）
+
+### 24.1 用户报的原话
+
+> 方块启动失败（giant）：nodeRef is not defined
+> 方块启动失败（shrink）：nodeRef is not defined
+
+两条都指向同一件事：上一轮（§23）新加的整页缩放，一抽到就炸。报错里的
+`（shrink）` / `（giant）` 是前一个提交 `978cdb4` 才加上的事件名 —— 在那之前
+用户能报的只有「有个单击事件会冒出方块启动失败」，十二个动效里挑一个，
+等于没报。**报错文案的定位价值，通常比错误本身更重要。**
+
+### 24.2 根因：一个名字只在组件里存在
+
+- `runZoom` 和其他 `run*` 一样写在**模块作用域**（2 空格缩进那群函数里），
+  而它内部写了 `var block = nodeRef.current`；
+- `nodeRef` 是组件里的 `var nodeRef = useRef(null)`（`lib/client.js:1158`），
+  模块作用域根本没有这个名字 → `ReferenceError`；
+- 第二个入口同样中招：调试 API `zoom(factor, durationMs)` 也调
+  `runZoom({...}, resolve)`，想让跑起来时同样没有 block。
+
+修法是把节点**当参数递进去**，和 `runRunaway` / `runButterFingers` /
+`runLowGravity` 保持同一个约定：
+
+```js
+runZoom(visual, block, onDone)                       // 模块作用域只吃参数
+runZoom(visual, nodeRef.current, zoomEnd)            // 组件里取 ref 再递
+```
+
+### 24.3 为什么 176 条真执行检查全绿
+
+`tools/visual-run-check.mjs` 用 `new Function(...)` 把抽出来的函数体拼起来跑，
+而它当时多注了一个参数 `nodeRef`（因为 `runZoom`「看起来需要它」）。于是模块
+作用域里凭空多出一个 `nodeRef`，那个不存在的变量被测试替身补上了 ——
+检查当然全绿。一句话教训：**测试替身不许替实现圆谎**。
+
+### 24.4 两边都堵
+
+- `visual-run-check`：`session()` 不再注入 `nodeRef`，并把这条理由写在代码里
+  （谁想加回去会先读到）。真读它就会直接 `ReferenceError` 崩掉 ——
+  比「安静的绿」好得多。
+- `show-check` 新增一节「动效函数不越界读组件变量」：把 12 个 `run*` 的函数体
+  抽出来逐个扫组件作用域名单（`nodeRef / showRef / soundRef / quipTimer /
+  lyricTimer / broadcast(Finish|Escape|Timer) / setError / setBusy / setQuip /
+  setCenterText / beginShow / startLyricPoll / broadcastText / say`），命中就把
+  名字写进 FAIL 文案。show-check 128 → 140 条。
+
+### 24.5 敏感度：两种失败形态都验过
+
+把 `var block2 = nodeRef.current` 加回 `runZoom`：
+
+- `show-check` → `FAIL 动效 runZoom 只吃参数、不读组件变量（发现 nodeRef）`
+  （139/140）；
+- `visual-run-check` → 直接抛 `ReferenceError: nodeRef is not defined`，退出码 1。
+
+已还原，恢复 140 / 176 全绿。
+
+### 24.6 顺带记下的一条规矩
+
+模块作用域的函数只吃参数，组件作用域的东西（ref、setState、`say`、`beginShow`）
+一律由调用方递进来。这条规矩以前是口头约定，现在是 `show-check` 里 12 条断言。
+
 
 
 
