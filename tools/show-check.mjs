@@ -340,6 +340,28 @@ checkTrue(
   /addEventListener\('error'/.test(source),
 )
 
+/* ---- 11. 右键方块能收起设置面板（m01549） ---- */
+
+console.log('-- 右键方块：面板开着就收面板，没开才开关菜单 --')
+/* 抽 onContextMenu 的真实函数体来验，不是验整个文件里某句话出现过 ——
+   两件事（收面板 / 开菜单）必须**在同一个分支结构里**，否则可能两个都写了
+   却互相覆盖（比如先 setMenuOpen 再 setSettingsOpen）。 */
+const contextMenuMatch = source.match(/onContextMenu: function \(event\) \{([\s\S]*?)\n          \},/)
+if (!contextMenuMatch) {
+  checkTrue('找得到方块的 onContextMenu', false)
+} else {
+  const ctxBody = contextMenuMatch[1]
+  checkTrue('右键仍然 preventDefault（不弹浏览器原生菜单）', /event\.preventDefault\(\)/.test(ctxBody))
+  checkTrue('面板开着时收起面板', /if \(settingsOpen\) \{[\s\S]{0,200}setSettingsOpen\(null\)/.test(ctxBody))
+  checkTrue('收起面板时顺手关掉右键菜单（不留一个悬空菜单）', /setSettingsOpen\(null\)[\s\S]{0,120}setMenuOpen\(false\)/.test(ctxBody))
+  checkTrue('收面板的分支会 return，不会继续把菜单翻出来', /setMenuOpen\(false\)[\s\S]{0,40}return/.test(ctxBody))
+  checkTrue('面板没开时照旧开关菜单', /setMenuOpen\(function \(prev\) \{[\s\S]{0,60}return !prev/.test(ctxBody))
+  checkTrue(
+    '判定用的是 settingsOpen 本身，不是 settingsBusy 之类的替身',
+    /if \(settingsOpen\) \{/.test(ctxBody) && !/settingsBusy/.test(ctxBody),
+  )
+}
+
 console.log('')
 if (fail === 0) {
   console.log(`ALL GREEN  pass=${pass} fail=0`)

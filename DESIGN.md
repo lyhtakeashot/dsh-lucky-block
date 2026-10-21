@@ -2024,6 +2024,51 @@ runZoom(visual, nodeRef.current, zoomEnd)            // 组件里取 ref 再递
 `FAIL shrink 的 factor=1.2 不是缩小` —— 两条独立的路都指向同一个错。
 已还原。
 
+## 26. 右键方块收起设置面板（m01549）
+
+### 26.1 用户的原话
+
+> 添加一个功能，保存更改后，右键方块，可以直接关闭设置界面
+
+要求的是「改完之后有个顺手的出口」。原来的出口只有面板右上角那个 `✕`，
+而面板贴在方块正下方、高度 `70vh` —— 用户改完最后一行时，鼠标就在方块附近，
+要收起来却得横移到面板顶端去找一个 8 像素的字。这个距离就是全部问题。
+
+### 26.2 做法：右键的含义**看面板开没开**
+
+```
+onContextMenu:
+  preventDefault()
+  if (settingsOpen) { setSettingsOpen(null); setMenuOpen(false); return }
+  setMenuOpen(prev => !prev)
+```
+
+- 面板开着 → 右键 = 收面板。面板没开 → 右键 = 开关菜单（原行为）。
+- 收面板时**顺手把菜单关掉**：否则 `menuOpen` 可能还留着 `true`，
+  下次右键会先「收菜单」看起来像没反应。
+- 分支里 `return`，不继续往下翻菜单 —— 两件事在同一个判断里互斥，
+  不是「两个都执行」。
+- 收面板**不看** `settingsBusy`：保存是后台请求，关面板不会取消它，
+  失败也会走 `setError` 在方块上方冒出来。为了一个 200ms 的请求
+  让右键失灵，只会让用户以为坏了。
+
+### 26.3 顺手删掉的一句假话
+
+面板容器上的注释原先写着「点空白处关闭」，但那个功能从来没实现过
+（全文件没有对应的 `pointerdown` 监听）。留着它比没有更糟：下一个读代码的人
+会以为外面那圈点击是安全的，然后照着这个假设去写新东西。现在注释写的是
+真实的三个事实：✕、再右键一次方块、保存不自动收。
+
+### 26.4 `show-check` 的第 11 节（146 条）
+
+`onContextMenu` 的函数体被整段抽出来单独断言，不看「文件里出现过某句话」：
+`preventDefault` 还在、`if (settingsOpen)` 分支里 `setSettingsOpen(null)`、
+紧跟 `setMenuOpen(false)`、分支以 `return` 结束、没开面板时仍然翻转菜单、
+判据是 `settingsOpen` 本身而不是 `settingsBusy` 之类的替身。
+
+敏感度：把 `if (settingsOpen)` 改成 `if (false)` → 红两条
+（`面板开着时收起面板`、`判定用的是 settingsOpen 本身…`）。已还原。
+
 
 
 
