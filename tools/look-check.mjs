@@ -276,6 +276,17 @@ checkTrue('面板有万圣节开关', /万圣节（10\/31）自动变南瓜/.tes
 checkTrue('两个开关都走 applyLook 落盘（不是只改 state）',
   (clientSrc.match(/applyLook\(Object\.assign\(\{\}, lookDraft, \{ (splash|halloween): e\.target\.checked \}\)\)/g) || []).length, 2)
 
+/* ---------- 9. 面板底部的自述行 ---------- */
+
+console.log('')
+console.log('— 9. 「这一份客户端」自述行（用来自检加载的是哪一版）—')
+checkTrue('有这一行', /这一份客户端：形状 /.test(clientSrc))
+checkTrue('形状数由 FACE_OPTIONS 自己算（不写死）',
+  /this build[\s\S]{0,80}FACE_OPTIONS\.length/i.test(clientSrc) || /这一份客户端：形状 '\s*\+\s*\n\s*FACE_OPTIONS\.length/.test(clientSrc) || /' \+ FACE_OPTIONS\.length/.test(clientSrc))
+checkTrue('事件数按 trigger 现算', /\(e\.trigger \|\| 'click'\) !== 'hold'/.test(clientSrc))
+checkTrue('长按数按 trigger 现算', /return e\.trigger === 'hold'/.test(clientSrc))
+checkTrue('自述行不用任何硬编码的「22」「8」', !/形状 8 种/.test(clientSrc) && !/事件 22 /.test(clientSrc))
+
 console.log('')
 console.log(`${fail === 0 ? 'ALL GREEN' : 'FAILURES'}  pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)
