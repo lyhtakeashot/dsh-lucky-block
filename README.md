@@ -7,7 +7,7 @@
    不满意？说一句「回滚」（或打 `/rollback`），立刻回到上一版本。
 2. **幸运方块按钮** —— 屏幕角落一个可拖动、可锁定的我的世界幸运方块（16×16 原版方块面贴图）。
    闲着没事就戳它一下：**左键单点**零成本，抽弹窗表演 / 假蓝屏 / 今日运气 / 冷知识 / 冷笑话；
-   **长按** 1.4 秒挖穿它，伴随裂纹、碎裂粒子和原版 Minecraft 的挖掘声（按当前材质决定是石头、木头还是金属；TNT 例外 —— 它一按就碎），接着它会在你的
+   **长按** 1.4 秒挖穿它，伴随裂纹、碎裂粒子和原版 Minecraft 的挖掘声（按当前材质决定是石头、木头还是金属），接着它会在你的
    默认工作区自动开一个新会话，**全程不需要你做任何事**地随机写篇论文 / 扒几条新闻 / 发明个东西。
    松手时方块若离屏幕边缘够近（48px 以内）会**自动吸附贴边**。
 
@@ -242,16 +242,12 @@ text / image / file 三种，没有任何可见性字段），所以这里不是
 面板分四块：
 
 **方块外观** —— 大小（24~128 像素）、图案（幸运方块 / 圆石 / 原木 / 铁块 / 命令方块 /
-TNT / 南瓜 / 自定义图片）、圆角、描边宽度与颜色、投影、背景。改动**立即生效并落盘**，
+南瓜 / 自定义图片）、圆角、描边宽度与颜色、投影、背景。改动**立即生效并落盘**，
 不用点保存。图片只接受 `data:image/` 或 `http(s)://` 开头的地址——
 `blob:` 在这个缓存域里用不了、`file:` 会被 CSP 拦下来，两种都会让图片裂开。
 「恢复默认」走的和手动改是同一套校验，所以恢复回来的一定是能用的值。
 
-选 TNT 会有个副作用：它是八张脸里**唯一一按就碎**的（原版 TNT 硬度 0，
-拿镐子也是碰一下就掉），所以长按挖 1.4 秒那套对它不生效 —— 按下即碎，
-且不掉镐子耐久。想正常体验挖掘流程就换别的脸。
-
-那七种内置图案**都是原版材质**：从 Minecraft 1.20.1 的资源包（
+那六种内置图案**都是原版材质**：从 Minecraft 1.20.1 的资源包（
 `assets/minecraft/textures/block/`）里取的 16×16 贴图，一个像素都没改，
 原图留在 `lib/textures/` 里（命令方块的正面原图是 16×64 的四帧动画，取了第一帧）。
 它们被内联成 data URI 随客户端一起发出去 —— 浏览器读不到插件目录，
@@ -505,10 +501,9 @@ npm pack
 命令方块 / 幸运方块 / 自定义图片都归到石头那一组：前两个在原版里本质是石头类方块，
 而自定义图是一张不知道是什么的图，用最中性的声音最不突兀。
 
-**TNT 是个例外：它一按就碎，没有挖掘循环。** 原版 TNT 硬度是 0，拿着镐子也是碰一下就掉，
-所以这块方块不进「按住挖 1.4 秒」那套流程 —— 按下即碎、只响一声碎裂音，也不扣镐子耐久。
-它没被加进材质声音表（没有挖掘循环，加了也没处用）；碎掉那一声按石头组走，
-因为原版 TNT 是**草方块**音色，而素材里没有草 —— 这里先借石头，别当成「专门给 TNT 配的声音」。
+**TNT 这张脸已经删掉了。** 原版 TNT 硬度是 0，拿着镐子也是碰一下就掉，没有挖掘循环 ——
+与其为它单独开一条「按下即碎」的特例，不如干脆不留这张脸（用户 m02957「TNT 删掉吧」）。
+少一张脸比多一条分支划算：挖掘流程只有一条，声音表也少一个「借石头凑音」的补丁。
 
 挖穿那一刻的声音分两层，对应原版两个不同的音效事件：
 
@@ -594,7 +589,7 @@ npm pack
 | 素材 | 尺寸 | 来源 |
 | --- | --- | --- |
 | 方块面 | 16×16 | `alexsocha/luckyblock` mod 的 `lucky_block.png` |
-| 圆石 / 原木 / 铁块 / 命令方块 / TNT / 南瓜 | 16×16 ×6 | 原版资源包 `InventivetalentDev/minecraft-assets`（Minecraft 1.20.1）的 `assets/minecraft/textures/block/`：`cobblestone` / `oak_log` / `iron_block` / `command_block_front`（原图 16×64 四帧，取第一帧）/ `tnt_side` / `carved_pumpkin`（有脸的那张，不是 `pumpkin_side`）。原图留在 `lib/textures/`，`node tools/texture-check.mjs --emit` 从那里重生成内联表 |
+| 圆石 / 原木 / 铁块 / 命令方块 / 南瓜 | 16×16 ×5 | 原版资源包 `InventivetalentDev/minecraft-assets`（Minecraft 1.20.1）的 `assets/minecraft/textures/block/`：`cobblestone` / `oak_log` / `iron_block` / `command_block_front`（原图 16×64 四帧，取第一帧）/ `carved_pumpkin`（有脸的那张，不是 `pumpkin_side`）。原图留在 `lib/textures/`，`node tools/texture-check.mjs --emit` 从那里重生成内联表。TNT 那张（`tnt_side`）在 m02957 随脸一起删了 |
 | 挖掘裂纹 10 帧 | 16×16 ×10 | 原版资源包 `PixiGeko/Minecraft-default-assets` 的 `assets/minecraft/textures/block/destroy_stage_0..9.png` |
 
 裂纹用 `image-rendering: pixelated` 保持硬边，长按时按进度切到下一帧，最后一帧之后碎裂。
@@ -629,7 +624,7 @@ npm pack
 `save-feedback-check.mjs` 保存按钮的三态回执（从 `client.js` 抽 `panelSaveButton` 用假 `h()` 跑：待命 / 保存中禁用压暗 / 已保存绿 / 失败红、两个按钮的回执互不串台、`saving` 在发请求之前点亮、`ok`/`fail` 1.8 秒后回待命）、
 `look-check.mjs` 外观三件事（小字抽句与不重样、万圣节日期与「该显示哪张脸」的八条分支、四张表彼此对得上 —— 白名单 ↔ 贴图表 ↔ 下拉框 ↔ 材质声音表，外加每个音频文件真的在 `lib/sounds/` 下）、
 `bluescreen-check.mjs` 蓝屏十张脸的内容质量（从 `index.js` 抽数组跑：表情 / 背景色 / STOP 码 / 首句四者两两不重复，每张四行、必有 STOP 行、末行必留 ESC、必说清 60 秒，表情不许带空格 —— 靠空格区分等于没区分）、
-`texture-check.mjs` 六张原版材质**真解像素**再断言（自己写的最小 PNG 解码器：每张 16×16、圆石是中性灰、原木偏棕且不亮、铁块是亮灰、TNT 有白腰带、南瓜是橙的、六张两两不同），并逐字节比对 `client.js` 里的内联副本与 `lib/textures/` 的原图；带 `--emit` 可从原图重新生成那张表、
+`texture-check.mjs` 五张原版材质**真解像素**再断言（自己写的最小 PNG 解码器：每张 16×16、圆石是中性灰、原木偏棕且不亮、铁块是亮灰、南瓜是橙的且有刻出来的脸、五张两两不同），并逐字节比对 `client.js` 里的内联副本与 `lib/textures/` 的原图；带 `--emit` 可从原图重新生成那张表、
 `lyrics-check.mjs` 歌词按时间取句的正确性（同样抽源码跑，含预判窗口的两个边界）、
 `konami-check.mjs` 科乐美秘技的状态机（同样抽源码跑：错一步清零、隔太久清零、不抢按键）、
 `pickaxe-check.mjs` 木镐耐久的边界（同样抽源码跑：第 59 下才换镐子、脏数据不会让镐子永新）、
@@ -638,7 +633,7 @@ npm pack
 `local-check.mjs` 本地语料库与分流、
 `events-check.mjs` 事件覆盖层与第三方事件校验（从 `index.js` 抽取源码跑）、
 `verify-sounds.mjs` 音效文件 ↔ 客户端清单 ↔ 宿主白名单三方一致性、
-`material-sound-check.mjs` 材质 ↔ 采样族是否真的对得上（木头必须是 `dig/wood`、金属必须是 copper、南瓜必须与橡木同组、TNT 必须不在材质表里且一按就碎、挖穿复用同材质；并明确禁止 `anvil_*` / `wood_click` / `pop` 混进材质组 —— 这三件事只有耳朵能发现，所以写成了断言）、
+`material-sound-check.mjs` 材质 ↔ 采样族是否真的对得上（木头必须是 `dig/wood`、金属必须是 copper、南瓜必须与橡木同组、TNT 不许以任何形式回来（材质表 / 白名单 / 下拉框 / instant 分支）、挖穿复用同材质；并明确禁止 `anvil_*` / `wood_click` / `pop` 混进材质组 —— 这三件事只有耳朵能发现，所以写成了断言）、
 `list-events.mjs` 打印事件清单与概率、
 `merge-trivia.mjs` / `merge-jokes.mjs` 语料合并器（`--check` 只体检不写盘）、
 `build-corpus-overview.mjs` 重新生成 `lib/语料库总览.md`（`--check` 校验是否过期）、

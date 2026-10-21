@@ -188,7 +188,7 @@ check('下拉框的 id 与白名单逐项一致（顺序也一致）', FACE_OPTI
 check('下拉框每项都有中文名和英文名', FACE_OPTIONS.every((p) => p[1] && p[2]), true)
 check('下拉框的中文名互不重复', new Set(FACE_OPTIONS.map((p) => p[1])).size, FACE_OPTIONS.length)
 
-const TEXTURED_FACES = ['cobblestone', 'oak', 'iron', 'command', 'tnt', 'pumpkin']
+const TEXTURED_FACES = ['cobblestone', 'oak', 'iron', 'command', 'pumpkin']
 check('每个「有原版材质」的方块都有一张内联贴图', TEXTURED_FACES.filter((f) => !FACE_TEXTURES[f]), [])
 check('贴图表里没有白名单外的孤儿', Object.keys(FACE_TEXTURES).filter((f) => LOOK_LIMITS.faces.indexOf(f) < 0), [])
 check('lucky 和 custom 不在贴图表里（一个用自己的默认图、一个用用户图片）',

@@ -28,13 +28,15 @@ const CLIENT = path.join(root, 'lib', 'client.js')
 /* face id → 贴图文件名。两张不是 16×16 一帧的原图：
    命令方块是 16×64 四帧动画，留裁好的第一帧；南瓜用 carved_pumpkin
    （脸上有刻出来的眼睛和嘴），不是 pumpkin_side（那是没刻过的侧面）。
-   两者的处理方式见 DESIGN.md §31。 */
+   两者的处理方式见 DESIGN.md §31。
+
+   TNT 那张在 m02957 整个删掉了（用户「TNT 删掉吧」）：它是唯一一张
+   「原版一按就碎」的脸，跟按住挖 1.4 秒的流程不合拍。 */
 const FILES = {
   cobblestone: 'cobblestone.png',
   oak: 'oak_log.png',
   iron: 'iron_block.png',
   command: 'command_block.png',
-  tnt: 'tnt_side.png',
   pumpkin: 'pumpkin.png',
 }
 
@@ -196,7 +198,7 @@ if (process.argv.includes('--emit')) {
   process.exit(0)
 }
 
-console.log('— 1. 六个材质各有一张 16×16 的图 —')
+console.log('— 1. 五个材质各有一张 16×16 的图 —')
 const images = {}
 for (const [face, file] of Object.entries(FILES)) {
   const full = path.join(TEX_DIR, file)
@@ -222,8 +224,8 @@ checkTrue('原木偏暗（亮度 60~110，不是被漂白过的木头）', stats
 checkTrue('铁块是亮灰（亮度 ≥ 200 且三通道几乎相等）',
   stats.iron.brightness >= 200 && stats.iron.spread <= 6, JSON.stringify(stats.iron))
 checkTrue('命令方块是暖色金属（r > g > b）', stats.command.r > stats.command.g && stats.command.g > stats.command.b, JSON.stringify(stats.command))
-checkTrue('TNT 有白腰带（近白像素 ≥ 15%）', stats.tnt.whiteRatio >= 0.15, 'whiteRatio=' + stats.tnt.whiteRatio)
-checkTrue('TNT 整体偏红（r 比 b 高 40 以上）', stats.tnt.r - stats.tnt.b >= 40, 'r-b=' + (stats.tnt.r - stats.tnt.b))
+/* TNT 那张在 m02957 删掉了，这两条断言随之删除 —— 不是放宽，
+   是那个 face 已经不在白名单里，再断言一张不存在的图只会变成噪音。 */
 checkTrue('南瓜是橙的（r ≥ 140，g 在 70~120，b ≤ 40）',
   stats.pumpkin.r >= 140 && stats.pumpkin.g >= 70 && stats.pumpkin.g <= 120 && stats.pumpkin.b <= 40,
   JSON.stringify(stats.pumpkin))
@@ -234,7 +236,7 @@ checkTrue('南瓜是橙的（r ≥ 140，g 在 70~120，b ≤ 40）',
 const pumpkinDark = darkRatio(images.pumpkin, 60)
 checkTrue('南瓜有刻出来的脸（亮度 < 60 的像素 ≥ 15%，侧面皮是 0）',
   pumpkinDark >= 0.15, 'darkRatio=' + pumpkinDark)
-checkTrue('六张图两两不同（不是同一张复制了六遍）', (() => {
+checkTrue('五张图两两不同（不是同一张复制了五遍）', (() => {
   const keys = Object.entries(images).map(([face, img]) => face + ':' + img.pixels.toString('base64'))
   return new Set(keys).size === keys.length
 })())
@@ -245,7 +247,7 @@ checkTrue('client.js 里有 FACE_TEXTURES 表', Boolean(tableMatch))
 if (tableMatch) {
   const table = {}
   for (const m of tableMatch[0].matchAll(/\n {4}([A-Za-z-]+): '([A-Za-z0-9+/=]+)',/g)) table[m[1]] = m[2]
-  check('表里正好六个材质', Object.keys(table).sort(), Object.keys(FILES).sort())
+  check('表里正好五个材质', Object.keys(table).sort(), Object.keys(FILES).sort())
   for (const [face, file] of Object.entries(FILES)) {
     const b64 = fs.readFileSync(path.join(TEX_DIR, file)).toString('base64')
     check(face + ' 的内联副本与 lib/textures/' + file + ' 一致', table[face] === b64, true)
@@ -256,7 +258,7 @@ console.log('')
 console.log('— 4. 每个形状都真的有一张图 —')
 const lookLimits = /faces: \[([^\]]*)\]/.exec(clientSrc)
 const faceIds = lookLimits ? lookLimits[1].split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean) : []
-check('白名单读到了八个形状', faceIds.length, 8)
+check('白名单读到了七个形状（TNT 删掉之后：lucky + 五张材质 + custom）', faceIds.length, 7)
 check('除 lucky / custom 外，每个形状都在 FACE_TEXTURES 里',
   faceIds.filter((f) => f !== 'lucky' && f !== 'custom' && !Object.prototype.hasOwnProperty.call(FILES, f)), [])
 const luckyUri = /var LUCKY_BLOCK_FACE_URI = 'data:image\/png;base64,([A-Za-z0-9+/=]+)'/.exec(clientSrc)
