@@ -472,18 +472,26 @@ npm pack
 「在拖动按钮」并取消挖掘——所以拖位置和挖方块不会打架。松开或移开都会取消挖掘，
 纹路和挖掘声**立刻**一起停。
 
-音效从宿主的 `/dsh-lucky-block/sound/*.ogg` 按需取（16 个原版音效，共 142 KB），
+音效从宿主的 `/dsh-lucky-block/sound/*.ogg` 按需取（24 个原版音效，共 237 KB），
 **不内联进客户端 bundle** —— `lib/client.js` 是每次页面启动都要下载的入口，
 为只在长按瞬间才用到的音效把它撑大 4 倍不划算。挖掘声每 210ms 一个、几个变体随机轮播
 （只听一个会明显「卡带」）；同时最多 6 个 Audio 元素，页面切到后台自动静音。
 
-**挖掘声跟着材质走**（圆石 / 原木 / 铁块）：
+**挖掘声跟着材质走**（圆石 / 原木 / 铁块），三组都是 Minecraft 1.20.1 的原版采样：
 
 | 材质 | 挖掘循环（每 210ms） | 挖穿那一下 |
 | --- | --- | --- |
-| 圆石（以及其余所有脸） | `dig1-4.ogg` 四个变体轮播 | `break.ogg` |
-| 原木 | `wood_click.ogg` / `pop.ogg` 交替 | `break.ogg` |
-| 铁块 | `anvil_land.ogg` | `anvil_land.ogg` |
+| 圆石（以及其余所有脸） | `dig1-4.ogg` 四个变体轮播 | `dig1-4.ogg` |
+| 原木 | `wood1-4.ogg` 四个变体轮播 | `wood1-4.ogg` |
+| 铁块 | `metal_step1-2.ogg` 两个变体轮播 | `metal_break1-2.ogg` |
+
+挖穿那一下复用同材质的挖掘采样，这不是偷懒：原版 `block.<材质>.break` 用的就是该材质
+`dig/<材质>N` 的那几段。金属没有用原版 `block/metal/*`，因为这张资源镜像里**根本没有
+`metal` 目录**（1.12.2 / 1.16.5 / 1.20.1 / 默认分支全 404），所以改用同样属于金属音色的
+铜块采样（`block/copper/step*` 与 `break*`）。
+`anvil_*.ogg` 与 `wood_click.ogg` / `pop.ogg` 曾经分别被当成「铁块声」和「原木声」，
+现在被 `material-sound-check.mjs` 明确禁止出现在材质组里 —— 铁砧是重物砸地，
+点击音是 UI 反馈，两者都不是「敲方块」。
 
 命令方块 / TNT / 南瓜 / 自定义图片都归到石头那一组：前三个在原版里本质是石头类方块，
 而自定义图是一张不知道是什么的图，用最中性的声音最不突兀。
@@ -561,7 +569,7 @@ npm pack
 - `lib/audio/` —— 音频文件目录，由宿主 `/dsh-lucky-block/audio/<file>` 投放。
 - `lib/lyrics/` —— 时间轴歌词，一首歌一份 `<文件干名字>.json`（同样用户目录优先）。
   已内含《Never Gonna Give You Up》副歌 42 秒。
-- `lib/sounds/` —— 16 个原版 Minecraft 音效（`.ogg`，共 142 KB），由宿主按需投放。
+- `lib/sounds/` —— 24 个原版 Minecraft 音效（`.ogg`，共 237 KB），由宿主按需投放。
 - `cordis.patch.yml` —— 把宿主侧插件插进插件树（客户端那半由 `package.json` 的 `dsh.client` 自动加载）。
 
 ## 素材出处
@@ -579,9 +587,11 @@ npm pack
 之所以找原素材而不是手绘：手绘的裂纹再怎么调都像程序生成的线条，和那张像素方块贴图
 放在一起会突兀；换成原版的黑褐裂纹 + 白色反光碎屑，才是游戏里挖方块的样子。
 
-音效是 Minecraft 1.20.1 原版 assets（`dig/stone1..4.ogg`、`random/glass1..3.ogg`、`random/break.ogg`），
-经 `tools/build-sounds.mjs` 从 mcasset.cloud 镜像取到 `lib/sounds/`。版权归 Mojang Studios；
-本插件只作本地开发期素材镜像，**运行时不依赖网络**。
+音效是 Minecraft 1.20.1 原版 assets，经 `tools/build-sounds.mjs` 从 mcasset.cloud 镜像取到 `lib/sounds/`：
+挖掘与碎裂 `dig/stone1..4`、`dig/wood1..4`、金属 `block/copper/step1..2` 与 `block/copper/break1..2`
+（原版 `block/metal/*` 在那张镜像里不存在，见上面「挖掘声跟着材质走」一段）、
+奖励叮 `random/glass1..3`、工具报废 `random/break`、外加 `random/anvil_land`（科乐美与旧版残留）。
+版权归 Mojang Studios；本插件只作本地开发期素材镜像，**运行时不依赖网络**。
 
 试水那首《Never Gonna Give You Up》来自 B 站官方 MV（BV1GJ411x7h7），
 只取了 100~142 秒的副歌段转成 Vorbis（44100 Hz / 立体声 / 632 KB）。
@@ -614,6 +624,7 @@ npm pack
 `local-check.mjs` 本地语料库与分流、
 `events-check.mjs` 事件覆盖层与第三方事件校验（从 `index.js` 抽取源码跑）、
 `verify-sounds.mjs` 音效文件 ↔ 客户端清单 ↔ 宿主白名单三方一致性、
+`material-sound-check.mjs` 材质 ↔ 采样族是否真的对得上（木头必须是 `dig/wood`、金属必须是 copper、挖穿复用同材质；并明确禁止 `anvil_*` / `wood_click` / `pop` 混进材质组 —— 这三件事只有耳朵能发现，所以写成了断言）、
 `list-events.mjs` 打印事件清单与概率、
 `merge-trivia.mjs` / `merge-jokes.mjs` 语料合并器（`--check` 只体检不写盘）、
 `build-corpus-overview.mjs` 重新生成 `lib/语料库总览.md`（`--check` 校验是否过期）、
