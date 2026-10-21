@@ -117,6 +117,43 @@ if (mapBody) {
   check(/iron:\s*'metal'/.test(mapBody[1]), '铁块 → metal')
 }
 
+/* ---------------- 8. 南瓜是木头音色，TNT 根本没有挖掘循环 ---------------- */
+// m02865 用户两句话：
+//   「TNT 在游戏里是一挖就破的，在这里就别加了吧」
+//   「南瓜的音效完全不对，你去查查」
+// 查下来的事实：
+//   - 原版南瓜是 `SoundType.WOOD`。镜像里有 `block/pumpkin/`，但只有 `carve1-2`
+//     （剪刀刻南瓜的声音），不是方块被挖的声音 —— 所以南瓜该跟橡木同组。
+//   - 原版 TNT 硬度 0，一按就碎，没有挖掘循环，所以它不该出现在 MATERIAL_SOUNDS 里，
+//     也不该走 charge 流程。
+console.log('\n== 南瓜与 TNT ==')
+const mapText = mapBody ? mapBody[1] : ''
+check(/pumpkin:\s*'wood'/.test(mapText), '南瓜 → wood（原版南瓜是木头音色，与橡木同组）', mapText.trim())
+check(!/tnt:/.test(mapText), 'TNT 不在 MATERIAL_SOUNDS 里（它没有挖掘循环）', mapText.trim())
+check(/oak:\s*'wood'/.test(mapText) && /pumpkin:\s*'wood'/.test(mapText), '南瓜与原木真的是同一组（都是 wood）')
+
+const downBody = /var onPointerDown = useCallback\(function \(event\) \{([\s\S]*?)\n    \}, \[/.exec(source)
+check(downBody !== null, '抽到了 onPointerDown')
+if (downBody) {
+  const body = downBody[1]
+  const branch = /if \(digFace === 'tnt'\) \{([\s\S]*?)\n      \}/.exec(body)
+  check(branch !== null, "TNT 有独立的 instant 分支（if (digFace === 'tnt')）")
+  if (branch) {
+    const inner = branch[1]
+    check(/shatterBlock\(rect\)/.test(inner), 'TNT 一按下就碎（shatterBlock）')
+    check(/playBreak\(digFace\)/.test(inner), 'TNT 碎的时候照常播碎裂声')
+    check(/onRoll\('hold'\)/.test(inner), 'TNT 碎完仍然走长按那一池事件（碎 = 一次长按）')
+    check(/\breturn\b/.test(inner), 'TNT 分支在碎完之后就返回，不进下面的 charge 流程')
+    check(!/startDig/.test(inner), 'TNT 不播挖掘循环音（一挖就破，没有循环）')
+    check(!/wearPickaxe/.test(inner), 'TNT 不扣镐子耐久（原版挖硬度 0 的方块不掉耐久）')
+    check(
+      body.indexOf("if (digFace === 'tnt')") < body.indexOf('setChargeLevel(1)'),
+      'TNT 分支在「开始计分」之前 —— 它压根不该进入 charge',
+    )
+    check(body.indexOf('setDragging(true)') < body.indexOf("if (digFace === 'tnt')"), 'TNT 分支排在拖拽登记之后（按住一拖仍然能拖走）')
+  }
+}
+
 console.log('')
 if (fail > 0) {
   console.error(`FAILED  pass=${pass} fail=${fail}`)
