@@ -120,6 +120,24 @@ checkTrue(
   /上一场还没收场[\s\S]{0,80}ESC/.test(source),
 )
 
+/* ---- 5b. 报错要说出「哪条事件」---- */
+/* 用户报过「有个单击事件会冒出方块启动失败」，而十二个动效里挑一个是没法查的。
+   宿主本来就给了 eventId，报错时带上它，复现一次就够。 */
+
+console.log('-- 报错能定位到事件 --')
+checkTrue(
+  'value 在 try 之外声明（catch 里才看得见）',
+  /var value = null\s*\n\s*try \{/.test(source),
+)
+checkTrue(
+  '报错前先算出「出事的是谁」',
+  /String\(value\.eventId \|\| \(value\.visual && value\.visual\.kind\) \|\| ''\)/.test(source),
+)
+checkTrue(
+  '括号里带事件名，而不是只有「方块启动失败」',
+  /'（' \+ where \+ '）'/.test(source),
+)
+
 /* ---- 6. 四类表演都接了收场信号（接线断言） ---- */
 
 console.log('-- 四类表演都接了收场信号 --')
