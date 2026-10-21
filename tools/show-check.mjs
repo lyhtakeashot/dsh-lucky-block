@@ -141,9 +141,22 @@ checkTrue('动效：假光标接了收场', /var cursorEnd = beginShow\(\)/.test
 checkTrue('动效：假光标把收场传给了 runFakeCursor', /runFakeCursor\([\s\S]{0,200}cursorEnd\)/.test(source))
 checkTrue('动效：屏幕抖接了收场', /var shakeEnd = beginShow\(\)/.test(source))
 checkTrue('动效：屏幕抖把收场传给了 runShake', /runShake\([\s\S]{0,160}shakeEnd\)/.test(source))
+/* 第二轮动效（m00160：停电 / 假警报 / 掀桌）。它们比前三个更容易漏接 ——
+   前三个是「一瞬间的事」，一眼能看出演完了；这三个里停电有 8 秒、
+   假警报中间还有一段什么都不发生的静默，很容易让人觉得「这么久应该不用管了」。
+   但 beginShow 是按次计数的，漏接一样会把方块永久锁住。 */
+checkTrue('动效：停电接了收场', /var blackoutEnd = beginShow\(\)/.test(source))
+checkTrue('动效：停电把收场传给了 runBlackout', /runBlackout\([\s\S]{0,160}blackoutEnd\)/.test(source))
+checkTrue('动效：假警报接了收场', /var alarmEnd = beginShow\(\)/.test(source))
+checkTrue('动效：假警报把收场传给了 runFalseAlarm', /runFalseAlarm\([\s\S]{0,160}alarmEnd\)/.test(source))
+checkTrue('动效：掀桌接了收场', /var flipEnd = beginShow\(\)/.test(source))
+checkTrue('动效：掀桌把收场传给了 runTableFlip', /runTableFlip\([\s\S]{0,160}flipEnd\)/.test(source))
+/* 停电会盖住整个屏幕，所以它必须**吃掉**点击（pointer-events:auto）。
+   放点击穿透过去的话，用户会在看不见的界面上点到真的会后悔的按钮。 */
+checkTrue('停电吃掉了点击（不是 click-through）', /function runBlackout\([\s\S]{0,600}'pointer-events:auto'/.test(source))
 /* 三个动效函数自己也要能被 ESC 打断，并且**每条收场路径都要调 onDone**。
    `finish()` 是它们唯一的出口，所以这里断的是「finish 里有 onDone 且被登记过」。 */
-for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake']) {
+for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake', 'runBlackout', 'runFalseAlarm', 'runTableFlip']) {
   const re = new RegExp(`function ${fnName}\\([\\s\\S]*?\\n  \\}`)
   const fnMatch = source.match(re)
   checkTrue(`动效 ${fnName} 抽得到`, Boolean(fnMatch))
@@ -154,6 +167,24 @@ for (const fnName of ['runRunaway', 'runFakeCursor', 'runShake']) {
     checkTrue(`动效 ${fnName} 收场时撤了 ESC 登记`, /unregister\(\)/.test(fnBody))
   }
 }
+/* 每一个挂上去的动画类都必须有对应的 @keyframes。少一条不会报错 ——
+   元素只是不动，而且只在抽中那条事件的那 0.3 秒里「什么都没发生」，
+   是最难复现、也最容易被当成「这次随机到了静默事件」的一类 bug。 */
+const ANIMATION_PAIRS = [
+  ['dsh-lucky-blackout-out', 'dshLuckyBlackoutOut'],
+  ['dsh-lucky-alarm-in', 'dshLuckyAlarmIn'],
+  ['dsh-lucky-alarm-payoff', 'dshLuckyAlarmPayoff'],
+  ['dsh-lucky-flip-in', 'dshLuckyFlipIn'],
+  ['dsh-lucky-flip-out', 'dshLuckyFlipOut'],
+  ['dsh-lucky-unflip-in', 'dshLuckyUnflipIn'],
+]
+for (const [cls, keyframes] of ANIMATION_PAIRS) {
+  checkTrue(`${cls} 有对应的 @keyframes ${keyframes}`, source.includes(`@keyframes ${keyframes}{`))
+  checkTrue(`${cls} 真的被挂到元素上了`, source.includes(`'${cls}'`))
+}
+/* 假警报那颗跳动的圆点走 inline style（`animation:` 写在 cssText 里），
+   不走 class —— 所以它验证的是名字本身。 */
+checkTrue('假警报的圆点用了 dshLuckyAlarmDot', source.includes('dshLuckyAlarmDot'))
 
 /* ---- 7. 每一条收场路径都会叫 onDone ---- */
 

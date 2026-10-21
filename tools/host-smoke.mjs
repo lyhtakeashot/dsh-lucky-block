@@ -269,9 +269,9 @@ if (!visualIds.includes('bluescreen') || !visualIds.includes('popups')) {
   console.error('FAIL  bluescreen / popups 应为 visual')
   visualFail += 1
 }
-/* 动效三兄弟必须是 visual：它们不该建会话、不该有正文。
-   抽中一条回来却带 localText 的话，客户端会把它当冷知识显示出来。 */
-for (const id of ['runaway', 'fake-cursor', 'shake']) {
+/* 动效六兄弟（m00160 从三个加到六个）同样的道理：它们只在屏幕上做一件事，
+   不建会话、不产生正文。抽中一条回来却带 localText 的话，客户端会把它当冷知识显示。 */
+for (const id of ['runaway', 'fake-cursor', 'shake', 'blackout', 'false-alarm', 'table-flip']) {
   if (!visualIds.includes(id)) {
     console.error(`FAIL  ${id} 应为 visual（它只动一下，不产生内容）`)
     visualFail += 1
@@ -285,6 +285,70 @@ if (agentIds.length === 0) {
 if (!localIds.includes('fortune')) {
   console.error('FAIL  fortune 应为 kind=local（纯本地抽签，不调 AI）')
   visualFail += 1
+}
+
+/* ------------------------------------------------------------------ *
+ * 三个新动效的 spec（m00160：停电 / 假警报 / 掀桌）
+ *
+ * 它们和原来那三兄弟的区别：前三兄弟的 spec 里**只有时长**，
+ * 这三个还得带内容 —— 假警报的两句话、掀桌的两个颜文字。
+ * spec 缺字段不会报错，只会让屏幕上出现一句 `undefined`，
+ * 所以这条必须在静态解析阶段盯住。
+ * ------------------------------------------------------------------ */
+const visualById = new Map(evs.filter((e) => e.kind === 'visual').map((e) => [e.id, e]))
+/* ping 里 `visual` 只有 kind、`visualSpec` 才是完整 spec。先确认这份 spec 真的送到了，
+   否则下面每条断言都会因为「读不到字段」而假绿（undefined 一样能骗过 === undefined 的写法）。 */
+for (const [id, ev] of visualById) {
+  if (!ev.visualSpec || typeof ev.visualSpec !== 'object') {
+    console.error(`FAIL  ${id} 的 ping 里没有 visualSpec（检查脚本读不到 spec）`)
+    visualFail += 1
+  }
+}
+const NEW_VISUAL_FIELDS = {
+  blackout: ['durationMs'],
+  'false-alarm': ['durationMs', 'suspenseMs', 'suspense', 'payoff'],
+  'table-flip': ['durationMs', 'flip', 'unflip'],
+}
+for (const [id, fields] of Object.entries(NEW_VISUAL_FIELDS)) {
+  const spec = visualById.get(id)?.visualSpec
+  if (!spec || typeof spec !== 'object') {
+    console.error(`FAIL  ${id} 没有 visual spec`)
+    visualFail += 1
+    continue
+  }
+  for (const field of fields) {
+    const value = spec[field]
+    if (value === undefined || value === null || value === '') {
+      console.error(`FAIL  ${id} 的 visual spec 缺 ${field}`)
+      visualFail += 1
+    }
+  }
+}
+/* 时长边界。停电是唯一一个故意慢的（8 秒，时长本身就是笑点），
+   另外两个必须短于 6 秒 —— 动效一长就从「表演」变成「卡住了」。 */
+if (!(Number(visualById.get('blackout')?.visualSpec?.durationMs) >= 5000)) {
+  console.error('FAIL  blackout 太短，看不出是停电（只会像闪了一下）')
+  visualFail += 1
+}
+for (const id of ['false-alarm', 'table-flip']) {
+  const ms = Number(visualById.get(id)?.visualSpec?.durationMs)
+  if (!(ms > 0 && ms <= 6000)) {
+    console.error(`FAIL  ${id} 的时长 ${ms} 超出 0~6000ms（动效一长就变成「卡住了」）`)
+    visualFail += 1
+  }
+}
+/* 假警报的时间分配才是这个事件的本体：
+   悬念段必须真的够长（梗就是「等」），收尾也必须留得下（那句「没有东西」要看得清）。 */
+const alarmSpec = visualById.get('false-alarm')?.visualSpec
+if (alarmSpec) {
+  if (!(Number(alarmSpec.suspenseMs) >= 1500)) {
+    console.error(`FAIL  false-alarm 的 suspenseMs=${alarmSpec.suspenseMs} 太短，梗就没了`)
+    visualFail += 1
+  }
+  if (!(Number(alarmSpec.durationMs) - Number(alarmSpec.suspenseMs) >= 600)) {
+    console.error('FAIL  false-alarm 给「没有东西」留的时间不够，用户还没看清就结束了')
+    visualFail += 1
+  }
 }
 
 /* ------------------------------------------------------------------ *
