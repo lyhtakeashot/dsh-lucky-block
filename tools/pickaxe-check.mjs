@@ -141,13 +141,15 @@ check(
   /if \(axe\.broke\) soundRef\.current\.playItemBreak\(\)/.test(source),
   '耐久耗尽时才播镐子碎裂声（受 axe.broke 守卫）',
 )
+/* m01706 起 playBreak 收一个 face 参数（材质决定用哪一下收尾），
+   所以这里按 `playBreak(digFace)` 匹配；守卫关系本身没变。 */
 check(
-  /soundRef\.current\.playBreak\(\)\n\s*\/\* 耐久耗尽/.test(source) ||
-    /playBreak\(\)[\s\S]{0,600}if \(axe\.broke\) soundRef\.current\.playItemBreak\(\)/.test(source),
+  /soundRef\.current\.playBreak\(digFace\)\n\s*\/\* 耐久耗尽/.test(source) ||
+    /playBreak\(digFace\)[\s\S]{0,600}if \(axe\.broke\) soundRef\.current\.playItemBreak\(\)/.test(source),
   '方块碎裂声每次都有（playBreak 不在 broke 守卫里）',
 )
 check(
-  !/if \(axe\.broke\) soundRef\.current\.playBreak\(\)/.test(source),
+  !/if \(axe\.broke\) soundRef\.current\.playBreak\(/.test(source),
   'playBreak 没有被错写进 broke 守卫里',
 )
 
@@ -168,11 +170,19 @@ check(
   `实际 ${groupItem && groupItem[1].trim()}`,
 )
 
-const breakBody = /playBreak: function \(\) \{([\s\S]*?)\n      \}/.exec(source)
-check(breakBody !== null, '抽到了 playBreak 函数体')
+/* m01706：playBreak 变成「按材质收尾」—— 有 face 时走 `<材质>Break` 组，
+   没 face 时退回老的 block（玻璃）组。两条都要在，缺一条就意味着
+   「某类调用点一响就是错的声音」。 */
+const breakBody = /playBreak: function \(face\) \{([\s\S]*?)\n      \}/.exec(source)
+check(breakBody !== null, '抽到了 playBreak 函数体（带 face 参数）')
 check(
   breakBody !== null && /pickSound\('block'/.test(breakBody[1]),
-  'playBreak 播的是 block 组',
+  'playBreak 没有材质时仍播 block 组（科乐美那声奖励叮走这条）',
+  breakBody ? breakBody[1].trim() : '',
+)
+check(
+  breakBody !== null && /pickSound\(materialSound\(face\) \+ 'Break', null\)/.test(breakBody[1]),
+  'playBreak 有材质时播 <材质>Break 组',
   breakBody ? breakBody[1].trim() : '',
 )
 
