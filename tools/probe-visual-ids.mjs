@@ -80,9 +80,9 @@ let failures = 0
    同一条断言今天验的是 popups、明天验的是 bluescreen，两种东西混在一个计数里。
 
    每个视觉事件打 3 次而不是 1 次：payload 结构只需要一次就能验，但
-   bluescreen 有三张脸、popups 有三种皮，多打几次才可能覆盖到不止一种。
+   bluescreen 有十张脸、popups 有三种皮，多打几次才可能覆盖到不止一种。
    这里只打印看到了几种，不作硬断言 —— 3 次抽样覆盖 3 种的概率是 22%，
-   拿它当断言等于把运气写进测试。 */
+   而十张脸里凑齐十种更不可能，拿它当断言等于把运气写进测试。 */
 const VISUAL_ROUNDS = 3
 
 for (const id of visualIds) {

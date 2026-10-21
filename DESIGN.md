@@ -191,7 +191,7 @@ c.effect(() => s, "dsh-literature: overlay panel");
 |---|---|---|---|
 | `paper` | AI 任务 | 宿主 | 随机词条库（学科×方法×对象）+ remote.session.create/prompt；全自动 approval |
 | `windows` | UI | 客户端 | 8-15 个无意义小窗，打字机出现，反序关闭；纯 DOM |
-| `bsod` | UI | 客户端 | 全屏 Win11 蓝屏样式（纯 CSS+DOM），三张脸随机一张，60s 自动结束，ESC 提前结束，z-index 高于一切但不覆盖已有 UI（独立 overlay 层） |
+| `bsod` | UI | 客户端 | 全屏 Win11 蓝屏样式（纯 CSS+DOM），十张脸随机一张，60s 自动结束，ESC 提前结束，z-index 高于一切但不覆盖已有 UI（独立 overlay 层） |
 | `fortune` | UI | 客户端 | 「你已被幸运方块选中」+ 撒花，5s |
 | `fact` | UI | 客户端 | 顶部随机冷知识横幅，可关 |
 | `mischief` | UI | 客户端 | 随机切换主题色/字号，5s 后还原；或随机播放 whale-widget 音效 |
@@ -1156,14 +1156,27 @@ URL 被判非法 —— 这些情况都没有 `ended` 可等。`audio.play()` �
 **为什么提示写在头顶**：头顶平时只用来说报错，而「现在点不动」正好是种状态说明。
 静默 `return` 会让用户以为方块坏了 —— 用户看不到任何反馈，只会多点几下。
 
-### 14.7 演出素材为什么变多样了（蓝屏三张脸、弹窗三种皮）
+### 14.7 演出素材为什么变多样了（蓝屏十张脸、弹窗三种皮）
 
 用户 m15360 第 5 条：「蓝屏屏保和弹窗表演都需要加点内容，
 比如说蓝屏再加几张，弹窗表演也可以添加一点老式电脑的弹窗故障和 win11 的弹窗形式」。
 
-**蓝屏**：`BLUESCREEN_VARIANTS` 三张脸（背景色 / 那个表情 / STOP 码都不同），
-`prepare(rand)` 抽一张。三张的 STOP 码是有意思的：`0x0000LUCKY`（原有）、
-`0x00C0FFEE (COFFEE_NOT_ENOUGH_TO_CONTINUE)`、`0x0BADF00D (BAD_FOOD_IN_CACHE)`。
+**蓝屏**：`BLUESCREEN_VARIANTS` 十张脸（背景色 / 表情 / STOP 码都不同），
+`prepare(rand)` 抽一张。最初只有三张，m01108 用户说「还是有点少」加到十张 ——
+蓝屏的权重虽然已经压到 6，但它一次占屏 60 秒，是池子里**最占时间**的表演：
+三张脸平均掷三次就重样，而重样的那 60 秒比不演还难熬。加一张的成本只是一段字符串，
+收益是整段 60 秒不重复。
+十张的 STOP 码全是可读的梗：`0x0000LUCKY` / `0x00C0FFEE`（coffee）/ `0x0BADF00D`（bad food）/
+`0x0BADC0DE`（bad code）/ `0x0DEFACED`（defaced）/ `0x0D15EA5E`（disease）/
+`0x0DEAD10CC`（dead lock）/ `0x0CAFEBABE`（cafe babe）/ `0x0BAADF00D`（bad food 的第二种吃法）/
+`0x0BA5EBA11`（baseball）。
+
+**十张脸的硬约束**（`tools/bluescreen-check.mjs` 99 条断言钉着）：表情 / 背景色 / STOP 码 /
+首句四者两两不重复，每张恰好四行、必有一行 `STOP:`、末行必留 ESC、必说清时长（60 秒 / 六十秒），
+表情必须是 1~4 个可见 ASCII 字符（96px 下缺字的符号会变成豆腐块）。
+这条检查抓到的第一件事就是**它自己**：原来的第二张脸写的是 `':( '`（多一个尾空格），
+屏幕上和第一张完全一样 —— 十张脸里有两张是同一张脸，用户看到的还是少。已改成 `-_-`。
+**靠空格区分等于没区分**，所以检查里不许表情带空格。
 
 **关键实现细节**：事件定义里**同时保留静态 `visual` 和 `prepare(rand)`**。
 静态那份不是冗余 —— `tools/host-smoke.mjs` 做的是静态源码解析，
@@ -1321,7 +1334,7 @@ URL 被判非法 —— 这些情况都没有 `ended` 可等。`audio.play()` �
 |---|---|---|
 | 权重合计、档位齐全、事件参数不矛盾 | `host-smoke.mjs` 静态解析源码 | 该，免费 |
 | 签文分布（凶 0.1%、吉类 87%、每档五条） | `probe-fortune.mjs` 抠出 `drawFortune` 离线跑 20 万次 | 该，0.5 秒 |
-| 某条事件的 payload 长什么样（歌词、音频、蓝屏三张脸） | `/roll` 带 `event` 指定，一次命中 | 该，改前必须 |
+| 某条事件的 payload 长什么样（歌词、音频、蓝屏十张脸） | `/roll` 带 `event` 指定，一次命中 | 该，改前必须 |
 | 「抽取概率对不对」 | 不测 | 不测 —— 测它等于重算一遍除法 |
 
 ### 16.2 为什么不用「临时把概率调到 100%」
