@@ -191,6 +191,50 @@ checkTrue(
   !/\(settingsOpen\.events \|\| \[\]\)\.map\(function \(item\) \{/.test(source),
 )
 
+/* ---- 6. 分组必须把所有子行都渲染出来 ---- */
+/* 这一节是补的窟窿：panelGroup 早先只收第二个参数，而「方块外观」那一组
+   是把每行摊成参数写的 —— 结果是那一组只显示「大小」，形状/圆角/描边/…
+   全被静默吃掉。静态断言看不出这种问题（源码里每一行都在），
+   只有真跑一遍、数孩子个数才会红。 */
+
+const panelGroupSource = grab(/function panelGroup\(title\) \{[\s\S]*?\n  \}/, 'panelGroup')
+const panelGroup = new Function(
+  'h',
+  `${panelGroupSource}\nreturn panelGroup`,
+)(function () {
+  const args = Array.prototype.slice.call(arguments)
+  return { tag: args[0], props: args[1] || {}, children: args.slice(2) }
+})
+
+const variadic = panelGroup('T', 'a', 'b')
+checkEqual('摊成参数的子行全部渲染（不是只留第一个）', variadic.children.length, 3)
+checkEqual('摊成参数时顺序不变', variadic.children.slice(1).join(','), 'a,b')
+
+const asArray = panelGroup('T', ['a', 'b'])
+checkEqual('装进数组的子行同样全部渲染', asArray.children.length, 3)
+
+const mixed = panelGroup('T', 'a', ['b', 'c'])
+checkEqual('参数与数组混写时按顺序摊平', mixed.children.slice(1).join(','), 'a,b,c')
+
+const withHoles = panelGroup('T', null, false, 'x')
+checkEqual('null / false 被跳过，不占位', withHoles.children.slice(1).join(','), 'x')
+
+checkTrue('分组标题始终是第一个孩子', variadic.children[0] && variadic.children[0].tag === 'div')
+checkTrue('分组容器是 div', variadic.tag === 'div')
+
+checkTrue(
+  'panelGroup 定义收多个参数（用 arguments.length 遍历）',
+  /function panelGroup\(title\) \{[\s\S]*arguments\.length/.test(source),
+)
+checkTrue(
+  '「方块外观」组里形状行紧跟大小行（这一组就是靠参数摊开写的）',
+  /panelRow\(t\('大小'[\s\S]{0,600}panelRow\(t\('形状'/.test(source),
+)
+checkTrue(
+  '面板里有四个分组（外观 / 缩放幅度 / 随机事件 / 扩展接口）',
+  (source.match(/panelGroup\(\s*\n?\s*t\('(方块外观|整页缩放幅度|随机事件|扩展接口)'/g) || []).length === 4,
+)
+
 /* ---------- 汇总 ---------- */
 
 console.log('')

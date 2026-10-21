@@ -2316,6 +2316,85 @@ FACE_OPTIONS），拼成 `new Function` 跑：
 `FACE_OPTIONS.length`、两个计数都按 `trigger` 现算、不许出现硬编码的
 「形状 8 种」。最后那条防的是「顺手把数字写死」，写死之后它就是一句装饰。
 
+## 30. 分组的子行被静默吃掉：`panelGroup` 只收了一个参数（m02268）
+
+### 30.1 自述行立了功，但也把方向指反了
+
+§29 那行自述加上之后，用户回了一句关键的话：面板底部「形状」后面写的是 **8**。
+于是「浏览器在跑旧包」这个假设当场被推翻 —— 同一份代码既算出 8 种形状，
+又渲染不出形状下拉框。**自检行把病因从「加载」指向了「渲染」。**
+
+### 30.2 真正的原因
+
+```js
+function panelGroup(title, children) {           // 只收第二个参数
+  return h('div', {...}, h('div', {...}, title), children)
+}
+```
+
+而「方块外观」那一组是这样调的：
+
+```js
+panelGroup(
+  t('方块外观', 'Block appearance'),
+  panelRow(t('大小', 'Size'), ...),      // ← 只有这一行进了 children
+  panelRow(t('形状', 'Shape'), ...),     // ← 从第二个参数起，全部被忽略
+  panelRow(t('圆角', 'Corner'), ...),
+  ...
+)
+```
+
+JS 不会为多余的实参报错，React 也不知道有行没被传进来。结果就是：
+**外观组只剩「大小」一行，其余静默消失，控制台一声不响。**
+用户从 10-18 起就看不到形状下拉框，报的「设置里没有形状」一直是对的。
+
+另外三个分组（整页缩放幅度 / 随机事件 / 扩展接口）是**把子行装进一个数组**或
+装进一个 IIFE 的返回值里传的，所以它们一直是好的 —— 坏的那一组恰好是
+唯一按参数摊开写的一组。这种「同一个函数、两种调用风格、只有一种被支持」
+的情况，静态检查（源码里每一行都在）完全看不出来。
+
+### 30.3 改法：两种写法都收
+
+```js
+function panelGroup(title) {
+  var rows = []
+  for (var i = 1; i < arguments.length; i += 1) {
+    var arg = arguments[i]
+    if (Array.isArray(arg)) rows = rows.concat(arg)
+    else if (arg !== null && arg !== undefined && arg !== false) rows.push(arg)
+  }
+  return h.apply(null, ['div', {...}, h('div', {...}, title)].concat(rows))
+}
+```
+
+两个细节是刻意的：
+
+- **用 `apply` 摊成多个孩子，而不是塞一个数组**。React 要求数组里的元素有 `key`，
+  而这些行本来就不是列表（没有 key）。摊开写就绕开了这条要求。
+- **`null` / `false` 直接跳过**。面板里有 `settingsOpen.zoom ? panelGroup(...) : null`
+  这类条件组，宽松一点比让调用方逐个判断更不容易出错。
+
+### 30.4 检查：真跑一遍、数孩子个数
+
+`tools/panel-check.mjs` 加第 6 节（33 → 43 条）。抽 `panelGroup` 的真源码，
+喂一个假 `h`（`{ tag, props, children }`），然后数孩子：
+
+- 摊成参数：`panelGroup('T','a','b')` 必须有 3 个孩子（标题 + a + b）；
+- 装进数组：`panelGroup('T',['a','b'])` 同样 3 个；
+- 混写：`panelGroup('T','a',['b','c'])` → `a,b,c` 顺序不乱；
+- 空位：`panelGroup('T',null,false,'x')` → 只剩 `x`；
+- 静态兜底：定义里必须出现 `arguments.length`、「形状」行必须紧跟「大小」行、
+  面板必须还是四个分组。
+
+敏感度：把循环上限从 `arguments.length` 改成 `2`（精确复现旧 bug），
+5 条断言变红（`摊成参数的子行全部渲染 —— 实际 2，期望 3` 等）；改回后 43 条全绿。
+
+### 30.5 教训
+
+「源码里明明有」不等于「界面上会有」。凡是**渲染路径上的收集逻辑**（分组、
+列表、槽位），静态断言只能证明原料在场，必须真跑一遍数产出。
+这也是本项目第二次栽在同一类坑上（第一次是 §24 的 `nodeRef`：测试替身替实现圆了谎）。
+
 
 
 
