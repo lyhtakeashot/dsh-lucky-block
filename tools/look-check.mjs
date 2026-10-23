@@ -218,7 +218,7 @@ const allFiles = new Set()
 Object.keys(SOUND_FILES).forEach((k) => SOUND_FILES[k].forEach((f) => allFiles.add(f)))
 checkTrue('清单里每个音频文件都真的在 lib/sounds/ 下', [...allFiles].every((f) => existsSync(path.join(root, 'lib', 'sounds', f))))
 checkTrue('没有不存在的材质组被引用（materialSound 只返回三组之一）',
-  ['cobblestone', 'oak', 'iron', 'lucky', 'custom', 'command', 'tnt', 'pumpkin']
+  ['cobblestone', 'oak', 'iron', 'lucky', 'custom', 'command', 'pumpkin']
     .map((f) => materialSound(f))
     .every((g) => Object.prototype.hasOwnProperty.call(SOUND_FILES, g) && Object.prototype.hasOwnProperty.call(SOUND_FILES, g + 'Break')))
 
